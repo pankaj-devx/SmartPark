@@ -8,9 +8,8 @@ import { AdminDashboardPage } from '../features/admin/AdminDashboardPage.jsx';
 import { OwnerParkingDashboard } from '../features/parkings/OwnerParkingDashboard.jsx';
 import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
 import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
-import { HomePage } from '../pages/HomePage.jsx';
 import { NotFoundPage } from '../pages/NotFoundPage.jsx';
-import { DashboardRoute, RoleEntryRedirect } from './RouteRedirects.jsx';
+import { DashboardRoute, RoleEntryRedirect, RoleHomeRoute } from './RouteRedirects.jsx';
 import { ProtectedRoute } from './ProtectedRoute.jsx';
 
 export const router = createBrowserRouter([
@@ -18,7 +17,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: <AppLayout />,
     children: [
-      { index: true, element: <HomePage /> },
+      { index: true, element: <RoleHomeRoute /> },
       { path: 'parkings', element: <SearchResultsPage /> },
       { path: 'parkings/:id', element: <ParkingDetailPage /> },
       { path: 'login', element: <LoginPage /> },

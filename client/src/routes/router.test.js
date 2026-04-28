@@ -60,3 +60,29 @@ test('owner workspace exposes occupancy section and settings route integration',
   assert.ok(routerSource.includes('<OwnerParkingDashboard activeSection="occupancy" />'));
   assert.ok(routerSource.includes('<OwnerParkingDashboard activeSection="settings" />'));
 });
+
+test('index route is role-aware and no longer hardcoded to HomePage', () => {
+  const routerSource = readFileSync(join(currentDir, 'router.jsx'), 'utf8');
+
+  assert.ok(routerSource.includes('{ index: true, element: <RoleHomeRoute /> }'));
+  assert.ok(!routerSource.includes('{ index: true, element: <HomePage /> }'));
+});
+
+test('RoleHomeRoute preserves guest landing and redirects privileged roles', () => {
+  const redirectsSource = readFileSync(join(currentDir, 'RouteRedirects.jsx'), 'utf8');
+
+  assert.ok(redirectsSource.includes('export function RoleHomeRoute'));
+  assert.ok(redirectsSource.includes('if (!isAuthenticated)'));
+  assert.ok(redirectsSource.includes('return <HomePage />;'));
+  assert.ok(redirectsSource.includes("user?.role === 'driver'"));
+  assert.ok(redirectsSource.includes('<DriverHomePage />'));
+  assert.ok(redirectsSource.includes("user?.role === 'owner' || user?.role === 'admin'"));
+  assert.ok(redirectsSource.includes('getDefaultRouteForRole(user.role)'));
+});
+
+test('RoleHomeRoute guards against session bootstrap leaks', () => {
+  const redirectsSource = readFileSync(join(currentDir, 'RouteRedirects.jsx'), 'utf8');
+
+  assert.ok(redirectsSource.includes('isBootstrapping'));
+  assert.ok(redirectsSource.match(/if \(isBootstrapping\)[\s\S]*Loading your home/));
+});

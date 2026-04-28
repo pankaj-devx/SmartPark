@@ -45,3 +45,30 @@ test('owner and admin dashboards include functional search surfaces', () => {
   assert.ok(adminSource.includes('Search users'));
   assert.ok(adminSource.includes('Search booking, user, or parking'));
 });
+
+test('driver home exposes personalized premium widgets', () => {
+  const source = readFileSync(join(currentDir, 'DriverHomePage.jsx'), 'utf8');
+
+  assert.ok(source.includes('export function DriverHomePage'));
+  assert.ok(source.includes('Driver home'));
+  assert.ok(source.includes('Upcoming booking summary'));
+  assert.ok(source.includes('Booking reminders'));
+  assert.ok(source.includes('Quick reserve shortcuts'));
+  assert.ok(source.includes('Saved parkings'));
+  assert.ok(source.includes('Nearby recommendations'));
+  assert.ok(source.includes('Continue recent search'));
+  assert.ok(source.includes('Recent activity'));
+  assert.ok(source.includes('buildGreeting'));
+});
+
+test('driver home reuses account experience helpers instead of rebuilding storage', () => {
+  const source = readFileSync(join(currentDir, 'DriverHomePage.jsx'), 'utf8');
+
+  assert.ok(source.includes("from '../features/account/accountExperience.js'"));
+  assert.ok(source.includes('getSavedParkings'));
+  assert.ok(source.includes('getRecentSearches'));
+  assert.ok(source.includes('getRecentActivity'));
+  assert.ok(source.includes('getReminderPlaceholders'));
+  assert.ok(source.includes('buildQuickRebookLink'));
+  assert.ok(source.includes('fetchMyBookings'));
+});
