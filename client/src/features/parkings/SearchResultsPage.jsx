@@ -13,6 +13,9 @@ const initialFilters = {
   district: '',
   city: '',
   area: '',
+  date: '',
+  startTime: '',
+  endTime: '',
   vehicleType: '',
   parkingType: '',
   minPrice: '',
@@ -33,15 +36,23 @@ export function SearchResultsPage() {
   const [pagination, setPagination] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [lastRequestKey, setLastRequestKey] = useState('');
 
   const activeChips = useMemo(() => buildChips(filters), [filters]);
 
   const loadParkings = useCallback(async (nextFilters) => {
+    const params = toParams(nextFilters);
+    const requestKey = JSON.stringify(params);
+
+    if (requestKey === lastRequestKey) {
+      return;
+    }
+
+    setLastRequestKey(requestKey);
     setError('');
     setIsLoading(true);
 
     try {
-      const params = toParams(nextFilters);
       const hasLocation = params.lat && params.lng;
       const data = hasLocation ? await fetchNearbyParkings(params) : await fetchPublicParkings(params);
       setParkings(data.parkings);
@@ -51,7 +62,7 @@ export function SearchResultsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [lastRequestKey]);
 
   useEffect(() => {
     Promise.resolve().then(() => loadParkings(initialFilters));
@@ -124,6 +135,21 @@ export function SearchResultsPage() {
           <Search className="h-4 w-4" aria-hidden="true" />
           Search
         </button>
+      </div>
+
+      <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3">
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Date
+          <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => patchFilters({ date: event.target.value })} type="date" value={filters.date} />
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Start
+          <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => patchFilters({ startTime: event.target.value })} type="time" value={filters.startTime} />
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          End
+          <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => patchFilters({ endTime: event.target.value })} type="time" value={filters.endTime} />
+        </label>
       </div>
 
       {activeChips.length > 0 ? (

@@ -13,6 +13,7 @@ const sortSchema = z.enum([
   'relevance'
 ]);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const coordinatesSchema = z.object({
   lat: z.coerce.number().min(-90).max(90),
@@ -82,6 +83,9 @@ export const listParkingQuerySchema = z.object({
   openNow: z.coerce.boolean().optional(),
   isOpen24x7: z.coerce.boolean().optional(),
   approvedOnly: z.coerce.boolean().optional().default(true),
+  date: dateSchema.optional(),
+  startTime: timeSchema.optional(),
+  endTime: timeSchema.optional(),
   lat: z.coerce.number().min(-90).max(90).optional(),
   lng: z.coerce.number().min(-180).max(180).optional(),
   sort: sortSchema.default('newest')

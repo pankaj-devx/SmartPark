@@ -227,6 +227,9 @@ parkingSchema.index({
   hourlyPrice: 1,
   availableSlots: -1
 });
+parkingSchema.index({ verificationStatus: 1, isActive: 1, availableSlots: -1, hourlyPrice: 1, createdAt: -1 });
+parkingSchema.index({ verificationStatus: 1, isActive: 1, area: 1, city: 1 });
+parkingSchema.index({ verificationStatus: 1, isActive: 1, isOpen24x7: 1, 'operatingHours.open': 1, 'operatingHours.close': 1 });
 parkingSchema.index({ owner: 1, createdAt: -1 });
 parkingSchema.index({ title: 'text', description: 'text', address: 'text', city: 'text' });
 

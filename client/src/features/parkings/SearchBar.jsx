@@ -2,23 +2,43 @@ import { useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { fetchSearchSuggestions } from './parkingApi.js';
 
+const suggestionCache = new Map();
+
 export function SearchBar({ value, onChange, onSearch }) {
   const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
-    if (!value || value.trim().length < 2) {
+    const normalizedValue = value.trim().toLowerCase();
+
+    if (normalizedValue.length < 2) {
       return undefined;
     }
 
+    if (suggestionCache.has(normalizedValue)) {
+      const cacheTimer = window.setTimeout(() => {
+        setSuggestions(suggestionCache.get(normalizedValue));
+      }, 0);
+
+      return () => window.clearTimeout(cacheTimer);
+    }
+
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        setSuggestions(await fetchSearchSuggestions(value));
+        const nextSuggestions = await fetchSearchSuggestions(normalizedValue, controller.signal);
+        suggestionCache.set(normalizedValue, nextSuggestions);
+        setSuggestions(nextSuggestions);
       } catch {
-        setSuggestions([]);
+        if (!controller.signal.aborted) {
+          setSuggestions([]);
+        }
       }
-    }, 300);
+    }, 350);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [value]);
 
   function pickSuggestion(suggestion) {

@@ -15,8 +15,8 @@ export async function fetchParkingById(id) {
   return response.data.data.parking;
 }
 
-export async function fetchSearchSuggestions(q) {
-  const response = await apiClient.get('/search/suggestions', { params: { q } });
+export async function fetchSearchSuggestions(q, signal) {
+  const response = await apiClient.get('/search/suggestions', { params: { q }, signal });
   return response.data.data.suggestions;
 }
 

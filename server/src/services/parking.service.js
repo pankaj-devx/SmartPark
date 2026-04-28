@@ -4,6 +4,36 @@ import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 const MAX_PARKING_IMAGES = 5;
+const MAX_PAGINATION_SKIP = 5000;
+const PARKING_LIST_PROJECTION = {
+  title: 1,
+  description: 1,
+  address: 1,
+  city: 1,
+  district: 1,
+  area: 1,
+  state: 1,
+  pincode: 1,
+  location: 1,
+  totalSlots: 1,
+  availableSlots: 1,
+  vehicleTypes: 1,
+  hourlyPrice: 1,
+  amenities: 1,
+  parkingType: 1,
+  isOpen24x7: 1,
+  operatingHours: 1,
+  popularityScore: 1,
+  images: 1,
+  coverImage: 1,
+  imageCount: 1,
+  owner: 1,
+  verificationStatus: 1,
+  rejectionReason: 1,
+  isActive: 1,
+  createdAt: 1,
+  updatedAt: 1
+};
 
 export function serializeParking(parking) {
   return {
@@ -146,6 +176,8 @@ export function buildPublicParkingFilter(query) {
     ];
   }
 
+  applyAvailabilityPlaceholders(filter, query);
+
   return filter;
 }
 
@@ -160,7 +192,10 @@ export function buildParkingSort(sort) {
     nearest: { createdAt: -1 }
   };
 
-  return sortMap[sort] ?? sortMap.newest;
+  return {
+    ...(sortMap[sort] ?? sortMap.newest),
+    _id: 1
+  };
 }
 
 export function canManageParking(user, parking) {
@@ -178,12 +213,12 @@ export async function listPublicParkings(query, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const page = query.page;
   const limit = query.limit;
-  const skip = (page - 1) * limit;
+  const skip = getPaginationSkip(page, limit);
   const filter = buildPublicParkingFilter(query);
   const sort = buildParkingSort(query.sort);
 
   const [parkings, total] = await Promise.all([
-    ParkingModel.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+    ParkingModel.find(filter).select(PARKING_LIST_PROJECTION).sort(sort).skip(skip).limit(limit).lean(),
     ParkingModel.countDocuments(filter)
   ]);
   const rankedParkings = applyRanking(parkings, query);
@@ -203,7 +238,7 @@ export async function listNearbyParkings(query, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const page = query.page;
   const limit = query.limit;
-  const skip = (page - 1) * limit;
+  const skip = getPaginationSkip(page, limit);
   const radiusMeters = query.radiusKm ? query.radiusKm * 1000 : query.radius;
   const filter = buildPublicParkingFilter({ ...query, lat: undefined, lng: undefined, radius: undefined, radiusKm: undefined });
 
@@ -222,7 +257,7 @@ export async function listNearbyParkings(query, deps = {}) {
     },
     {
       $facet: {
-        parkings: [{ $skip: skip }, { $limit: limit }],
+        parkings: [{ $sort: { distance: 1, _id: 1 } }, { $skip: skip }, { $limit: limit }, { $project: PARKING_LIST_PROJECTION }],
         metadata: [{ $count: 'total' }]
       }
     }
@@ -468,6 +503,19 @@ function applyParkingUpdates(parking, input) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getPaginationSkip(page, limit) {
+  return Math.min((page - 1) * limit, MAX_PAGINATION_SKIP);
+}
+
+function applyAvailabilityPlaceholders(filter, query) {
+  if (!query.date && !query.startTime && !query.endTime) {
+    return filter;
+  }
+
+  filter.availableSlots = { ...(filter.availableSlots ?? {}), $gt: 0 };
+  return filter;
 }
 
 function serializeParkingImage(image) {

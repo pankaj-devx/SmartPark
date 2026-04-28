@@ -2,7 +2,7 @@ import { Parking } from '../models/parking.model.js';
 
 export async function getSearchSuggestions(query, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
-  const q = query.q?.trim();
+  const q = query.q?.trim().slice(0, 80);
 
   if (!q || q.length < 2) {
     return {
@@ -10,7 +10,7 @@ export async function getSearchSuggestions(query, deps = {}) {
     };
   }
 
-  const matcher = new RegExp(escapeRegExp(q), 'i');
+  const matcher = new RegExp(`^${escapeRegExp(q)}`, 'i');
   const visibilityFilter = {
     verificationStatus: 'approved',
     isActive: true
@@ -19,7 +19,7 @@ export async function getSearchSuggestions(query, deps = {}) {
   const [cities, areas, titleParkings] = await Promise.all([
     ParkingModel.distinct('city', { ...visibilityFilter, city: matcher }),
     ParkingModel.distinct('area', { ...visibilityFilter, area: matcher }),
-    ParkingModel.find({ ...visibilityFilter, title: matcher }).select('title city state').limit(5).lean()
+    ParkingModel.find({ ...visibilityFilter, title: matcher }).select({ title: 1, city: 1, state: 1, _id: 0 }).limit(5).lean()
   ]);
 
   return {

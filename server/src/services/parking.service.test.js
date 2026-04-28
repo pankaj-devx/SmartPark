@@ -13,6 +13,7 @@ import {
   setPrimaryParkingImage,
   updateParking
 } from './parking.service.js';
+import { Parking } from '../models/parking.model.js';
 
 const ownerId = '507f1f77bcf86cd799439011';
 const otherOwnerId = '507f1f77bcf86cd799439012';
@@ -101,19 +102,38 @@ test('buildPublicParkingFilter composes location and open-now filters', () => {
   assert.deepEqual(filter.$or[1]['operatingHours.close'], { $gte: '10:30' });
 });
 
+test('availability placeholders keep approved visibility and require available slots', () => {
+  const filter = buildPublicParkingFilter({
+    date: '2026-05-01',
+    startTime: '09:00',
+    endTime: '11:00'
+  });
+
+  assert.equal(filter.verificationStatus, 'approved');
+  assert.equal(filter.isActive, true);
+  assert.deepEqual(filter.availableSlots, { $gt: 0 });
+});
+
 test('buildParkingSort supports discovery sorting modes', () => {
-  assert.deepEqual(buildParkingSort('cheapest'), { hourlyPrice: 1 });
-  assert.deepEqual(buildParkingSort('highest_availability'), { availableSlots: -1 });
+  assert.deepEqual(buildParkingSort('cheapest'), { hourlyPrice: 1, _id: 1 });
+  assert.deepEqual(buildParkingSort('highest_availability'), { availableSlots: -1, _id: 1 });
 });
 
 test('public list returns only approved listing query results', async () => {
   let receivedFilter;
+  let receivedProjection;
+  let receivedSort;
 
   const ParkingModel = {
     find(filter) {
       receivedFilter = filter;
       return {
+        select(projection) {
+          receivedProjection = projection;
+          return this;
+        },
         sort() {
+          receivedSort = arguments[0];
           return this;
         },
         skip() {
@@ -135,8 +155,43 @@ test('public list returns only approved listing query results', async () => {
 
   assert.equal(receivedFilter.verificationStatus, 'approved');
   assert.equal(receivedFilter.isActive, true);
+  assert.equal(receivedProjection.coverImage, 1);
+  assert.deepEqual(receivedSort, { createdAt: -1, _id: 1 });
   assert.equal(result.parkings.length, 1);
   assert.equal(result.pagination.total, 1);
+});
+
+test('public list caps deep pagination skip for performance safety', async () => {
+  let receivedSkip;
+
+  const ParkingModel = {
+    find() {
+      return {
+        select() {
+          return this;
+        },
+        sort() {
+          return this;
+        },
+        skip(skip) {
+          receivedSkip = skip;
+          return this;
+        },
+        limit() {
+          return {
+            lean: async () => []
+          };
+        }
+      };
+    },
+    async countDocuments() {
+      return 0;
+    }
+  };
+
+  await listPublicParkings({ page: 999, limit: 50, sort: 'newest' }, { ParkingModel });
+
+  assert.equal(receivedSkip, 5000);
 });
 
 test('nearby search uses geoNear, returns distance, and keeps approved visibility', async () => {
@@ -178,6 +233,42 @@ test('nearby search uses geoNear, returns distance, and keeps approved visibilit
   assert.equal(receivedPipeline[0].$geoNear.query.isActive, true);
   assert.equal(result.parkings[0].distance, 120);
   assert.equal(result.pagination.total, 1);
+});
+
+test('nearby search projects list fields inside aggregation', async () => {
+  let receivedPipeline;
+
+  const ParkingModel = {
+    async aggregate(pipeline) {
+      receivedPipeline = pipeline;
+      return [{ parkings: [], metadata: [] }];
+    }
+  };
+
+  await listNearbyParkings(
+    {
+      lat: 18.5204,
+      lng: 73.8567,
+      radius: 1000,
+      page: 1,
+      limit: 10,
+      sort: 'nearest'
+    },
+    { ParkingModel }
+  );
+
+  const facetStages = receivedPipeline[1].$facet.parkings;
+  assert.deepEqual(facetStages[0], { $sort: { distance: 1, _id: 1 } });
+  assert.equal(facetStages[3].$project.coverImage, 1);
+  assert.equal(facetStages[3].$project.images, 1);
+});
+
+test('parking model has discovery performance indexes', () => {
+  const indexes = Parking.schema.indexes().map(([fields]) => JSON.stringify(fields));
+
+  assert.ok(indexes.includes(JSON.stringify({ location: '2dsphere' })));
+  assert.ok(indexes.includes(JSON.stringify({ verificationStatus: 1, isActive: 1, availableSlots: -1, hourlyPrice: 1, createdAt: -1 })));
+  assert.ok(indexes.includes(JSON.stringify({ verificationStatus: 1, isActive: 1, area: 1, city: 1 })));
 });
 
 test('owner can update own listing and listing returns to pending review', async () => {
