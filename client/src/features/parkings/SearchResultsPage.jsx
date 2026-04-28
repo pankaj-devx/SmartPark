@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Camera, Car, MapPin, Navigation, Search, Shield, Zap } from 'lucide-react';
+import { BadgeCheck, Bookmark, BookmarkCheck, Camera, Car, MapPin, Navigation, Search, Shield, Zap } from 'lucide-react';
+import { isSavedParking, recordRecentSearch, toggleSavedParking } from '../account/accountExperience.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchNearbyParkings, fetchPublicParkings } from './parkingApi.js';
 import { FilterSidebar } from './FilterSidebar.jsx';
@@ -57,6 +58,9 @@ export function SearchResultsPage() {
       const data = hasLocation ? await fetchNearbyParkings(params) : await fetchPublicParkings(params);
       setParkings(data.parkings);
       setPagination(data.pagination);
+      recordRecentSearch({
+        label: buildSearchLabel(nextFilters)
+      });
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to load parking listings'));
     } finally {
@@ -200,6 +204,12 @@ export function SearchResultsPage() {
 function ParkingResultCard({ bookingParams, parking }) {
   const detailSearch = new URLSearchParams(bookingParams).toString();
   const detailPath = detailSearch ? `/parkings/${parking.id}?${detailSearch}` : `/parkings/${parking.id}`;
+  const [isSaved, setIsSaved] = useState(() => isSavedParking(parking.id));
+
+  function handleToggleSaved() {
+    toggleSavedParking(parking);
+    setIsSaved((current) => !current);
+  }
 
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -222,6 +232,9 @@ function ParkingResultCard({ bookingParams, parking }) {
             {[parking.area, parking.city, parking.state].filter(Boolean).join(', ')}
           </p>
         </div>
+        <button aria-label={isSaved ? 'Remove saved parking' : 'Save parking'} className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950" onClick={handleToggleSaved} type="button">
+          {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
+        </button>
       </div>
       <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{parking.description}</p>
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
@@ -303,4 +316,8 @@ function buildChips(filters) {
     filters.isOpen24x7 ? '24x7' : '',
     ...filters.amenities
   ].filter(Boolean);
+}
+
+function buildSearchLabel(filters) {
+  return filters.search || [filters.area, filters.city, filters.state].filter(Boolean).join(', ') || 'Parking discovery';
 }

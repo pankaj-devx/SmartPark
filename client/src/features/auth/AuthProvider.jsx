@@ -72,6 +72,12 @@ export function AuthProvider({ children }) {
       login(authData) {
         setAuth(authData);
       },
+      updateUser(user) {
+        setAuth((current) => ({
+          ...current,
+          user
+        }));
+      },
       logout() {
         setAuth({ user: null, token: null });
       }

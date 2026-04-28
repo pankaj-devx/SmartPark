@@ -34,6 +34,13 @@ test('admin dashboard returns moderation summaries and grouped parkings', async 
   const UserModel = {
     async countDocuments() {
       return 5;
+    },
+    find() {
+      return sortableLean([
+        makeUser({ role: 'driver' }),
+        makeUser({ role: 'owner' }),
+        makeUser({ role: 'admin' })
+      ]);
     }
   };
 
@@ -45,6 +52,8 @@ test('admin dashboard returns moderation summaries and grouped parkings', async 
   assert.equal(dashboard.parkings.pending.length, 1);
   assert.equal(dashboard.parkings.approved.length, 1);
   assert.equal(dashboard.parkings.rejected.length, 1);
+  assert.equal(dashboard.users.length, 3);
+  assert.equal(dashboard.userMetrics.owners, 1);
 });
 
 test('admin parkings are grouped by verification status', async () => {
@@ -82,9 +91,12 @@ test('admin booking oversight forwards status and entity filters', async () => {
     find(filter) {
       receivedFilter = filter;
       return {
+        populate() {
+          return this;
+        },
         sort() {
           return {
-            lean: async () => [makeBooking()]
+            lean: async () => [makeBooking({ withRelations: true })]
           };
         }
       };
@@ -103,6 +115,8 @@ test('admin booking oversight forwards status and entity filters', async () => {
   assert.equal(receivedFilter.status, 'confirmed');
   assert.equal(receivedFilter.parking, parkingId);
   assert.equal(bookings.length, 1);
+  assert.equal(bookings[0].parkingTitle, 'Station Parking');
+  assert.equal(bookings[0].userName, 'Asha Driver');
 });
 
 function sortableLean(rows) {
@@ -148,17 +162,28 @@ function makeParking(overrides = {}) {
   };
 }
 
-function makeBooking() {
+function makeBooking(overrides = {}) {
   return {
     _id: {
       toString: () => bookingId
     },
-    user: {
-      toString: () => '507f1f77bcf86cd799439033'
-    },
-    parking: {
-      toString: () => parkingId
-    },
+    user: overrides.withRelations
+      ? {
+          _id: { toString: () => '507f1f77bcf86cd799439033' },
+          name: 'Asha Driver',
+          email: 'asha@example.com'
+        }
+      : {
+          toString: () => '507f1f77bcf86cd799439033'
+        },
+    parking: overrides.withRelations
+      ? {
+          _id: { toString: () => parkingId },
+          title: 'Station Parking'
+        }
+      : {
+          toString: () => parkingId
+        },
     vehicleType: '4-wheeler',
     bookingDate: '2026-05-01',
     startTime: '09:00',
@@ -168,5 +193,19 @@ function makeBooking() {
     status: 'confirmed',
     createdAt: new Date('2026-04-28T00:00:00.000Z'),
     updatedAt: new Date('2026-04-28T00:00:00.000Z')
+  };
+}
+
+function makeUser(overrides = {}) {
+  return {
+    _id: {
+      toString: () => '507f1f77bcf86cd799439099'
+    },
+    name: 'Admin Visible User',
+    email: 'user@example.com',
+    role: overrides.role ?? 'driver',
+    phone: '9999999999',
+    status: overrides.status ?? 'active',
+    createdAt: new Date('2026-04-28T00:00:00.000Z')
   };
 }

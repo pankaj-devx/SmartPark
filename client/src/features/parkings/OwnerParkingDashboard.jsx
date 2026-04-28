@@ -1,24 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
-import { BarChart3, CheckCircle2, Edit3, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart3, CheckCircle2, Edit3, Search, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
+import { ProfilePage } from '../../pages/ProfilePage.jsx';
 import { completeOwnerBooking, fetchOwnerBookings } from '../owner/ownerApi.js';
 import { createParking, deleteParking, updateParking, uploadParkingImages } from './parkingApi.js';
 import { ParkingForm } from './ParkingForm.jsx';
 
+const OWNER_CACHE_KEY = 'smartpark_owner_dashboard_cache';
 const statusStyles = {
   pending: 'bg-amber-50 text-amber-700',
   approved: 'bg-brand-50 text-brand-700',
   rejected: 'bg-red-50 text-red-700'
 };
 
-export function OwnerParkingDashboard() {
-  const [bookingFilters, setBookingFilters] = useState({ status: '', parking: '' });
+const cachedData = readOwnerCache();
+
+export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
+  const [bookingFilters, setBookingFilters] = useState({ status: '', parking: '', query: '' });
   const [error, setError] = useState('');
   const [editingParking, setEditingParking] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [ownerBookings, setOwnerBookings] = useState([]);
-  const [ownerSummary, setOwnerSummary] = useState(null);
-  const [parkings, setParkings] = useState([]);
+  const [isLoading, setIsLoading] = useState(!cachedData);
+  const [ownerBookings, setOwnerBookings] = useState(cachedData?.ownerBookings ?? []);
+  const [ownerSummary, setOwnerSummary] = useState(cachedData?.ownerSummary ?? null);
+  const [parkings, setParkings] = useState(cachedData?.parkings ?? []);
+  const selectedSection = activeSection === 'dashboard' ? 'overview' : activeSection;
 
   const loadMine = useCallback(async () => {
     setError('');
@@ -29,6 +34,11 @@ export function OwnerParkingDashboard() {
       setParkings(bookingData.parkings);
       setOwnerBookings(bookingData.bookings);
       setOwnerSummary(bookingData.summary);
+      writeOwnerCache({
+        ownerBookings: bookingData.bookings,
+        ownerSummary: bookingData.summary,
+        parkings: bookingData.parkings
+      });
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to load your owner dashboard'));
     } finally {
@@ -105,134 +115,268 @@ export function OwnerParkingDashboard() {
     setEditingParking(parking);
   }
 
+  const occupancyCards = useMemo(
+    () =>
+      parkings.map((parking) => ({
+        ...parking,
+        utilization: parking.totalSlots ? Math.round(((parking.totalSlots - parking.availableSlots) / parking.totalSlots) * 100) : 0
+      })),
+    [parkings]
+  );
+  const filteredOwnerBookings = useMemo(() => {
+    const term = bookingFilters.query.trim().toLowerCase();
+
+    if (!term) {
+      return ownerBookings;
+    }
+
+    return ownerBookings.filter((booking) => {
+      const parking = parkings.find((item) => item.id === booking.parking);
+      return [booking.id, booking.vehicleType, booking.bookingDate, parking?.title]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [bookingFilters.query, ownerBookings, parkings]);
+  const topListing = ownerSummary?.perListingEarnings?.slice().sort((left, right) => right.estimatedRevenue - left.estimatedRevenue)[0] ?? null;
+
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-950">Owner parking dashboard</h1>
-        <p className="mt-2 text-slate-600">Create spaces, monitor reservations, and complete active bookings.</p>
+    <section className="mx-auto max-w-7xl px-4 py-8">
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-sm font-medium uppercase text-brand-700">Owner control panel</p>
+        <h1 className="mt-2 text-3xl font-bold text-slate-950">Parking operations workspace</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Switch between overview, listings, reservations, occupancy, earnings, and account settings without the long-scroll dashboard feel.</p>
       </div>
 
-      {error ? <p className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
-      {ownerSummary ? (
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <SummaryCard label="Occupied now" value={ownerSummary.occupiedSlotsNow} />
-          <SummaryCard label="Available now" value={ownerSummary.availableSlotsNow} />
-          <SummaryCard label="Upcoming reservations" value={ownerSummary.upcomingReservations} />
-          <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary.estimatedRevenue}`} />
-        </div>
-      ) : null}
+      <div className="mt-6">
+        {selectedSection === 'overview' ? <OwnerOverview ownerSummary={ownerSummary} parkings={parkings} topListing={topListing} /> : null}
+        {selectedSection === 'listings' ? <OwnerListings editingParking={editingParking} handleCreate={handleCreate} handleDelete={handleDelete} handleMediaChange={handleMediaChange} handleUpdate={handleUpdate} isLoading={isLoading} parkings={parkings} setEditingParking={setEditingParking} /> : null}
+        {selectedSection === 'reservations' ? <OwnerReservations bookingFilters={bookingFilters} filteredOwnerBookings={filteredOwnerBookings} handleCompleteBooking={handleCompleteBooking} isLoading={isLoading} parkings={parkings} setBookingFilters={setBookingFilters} /> : null}
+        {selectedSection === 'occupancy' ? <OwnerOccupancy isLoading={isLoading} occupancyCards={occupancyCards} ownerSummary={ownerSummary} /> : null}
+        {selectedSection === 'earnings' ? <OwnerEarnings ownerSummary={ownerSummary} parkings={parkings} /> : null}
+        {selectedSection === 'settings' ? <ProfilePage defaultTab="role" embedded showHeader={false} /> : null}
+      </div>
+    </section>
+  );
+}
 
-      <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-xl font-semibold text-slate-950">{editingParking ? 'Edit parking' : 'Create parking'}</h2>
-          <ParkingForm
-            key={editingParking?.id ?? 'create'}
-            initialParking={editingParking}
-            onCancel={editingParking ? () => setEditingParking(null) : undefined}
-            onMediaChange={handleMediaChange}
-            onSubmit={editingParking ? handleUpdate : handleCreate}
-            submitLabel={editingParking ? 'Update listing' : 'Create listing'}
-          />
-        </div>
+function OwnerOverview({ ownerSummary, parkings, topListing }) {
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Occupied now" value={ownerSummary?.occupiedSlotsNow ?? 0} />
+        <SummaryCard label="Available now" value={ownerSummary?.availableSlotsNow ?? 0} />
+        <SummaryCard label="Upcoming reservations" value={ownerSummary?.upcomingReservations ?? 0} />
+        <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary?.estimatedRevenue ?? 0}`} />
+      </div>
 
-        <div className="grid gap-6">
-          <section>
-            <h2 className="mb-4 text-xl font-semibold text-slate-950">Your listings</h2>
-            {isLoading ? <p className="text-sm text-slate-600">Loading your dashboard...</p> : null}
-            <div className="grid gap-4">
-              {parkings.map((parking) => (
-                <article key={parking.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  {parking.coverImage ? (
-                    <img alt={parking.coverImage.caption || parking.title} className="mb-4 aspect-video w-full rounded-md object-cover" src={parking.coverImage.url} />
-                  ) : null}
-                  <div className="flex items-start justify-between gap-4">
+      <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+        <Panel title="Listings health" subtitle="A clean operational snapshot instead of a long blended page.">
+          {parkings.length === 0 ? (
+            <EmptyState description="Create your first listing to start using the owner workspace." title="No listings yet" />
+          ) : (
+            <div className="grid gap-3">
+              {parkings.slice(0, 4).map((parking) => (
+                <article className="rounded-md border border-slate-200 p-4" key={parking.id}>
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold text-slate-950">{parking.title}</h3>
-                      <p className="mt-1 text-sm text-slate-600">
-                        {parking.city}, {parking.state} - Rs {parking.hourlyPrice}/hr
-                      </p>
+                      <p className="font-semibold text-slate-950">{parking.title}</p>
+                      <p className="mt-1 text-sm text-slate-600">{parking.city}, {parking.state}</p>
                     </div>
                     <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
-                      {parking.verificationStatus === 'pending' ? 'pending review' : parking.verificationStatus}
+                      {parking.verificationStatus}
                     </span>
-                  </div>
-                  <p className="mt-3 text-sm text-slate-600">
-                    {parking.availableSlots}/{parking.totalSlots} slots available
-                  </p>
-                  {parking.rejectionReason ? (
-                    <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">Rejection reason: {parking.rejectionReason}</p>
-                  ) : null}
-                  <div className="mt-4 flex gap-2">
-                    <button className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" type="button" onClick={() => setEditingParking(parking)}>
-                      <Edit3 className="h-4 w-4" aria-hidden="true" />
-                      Edit
-                    </button>
-                    <button className="inline-flex items-center gap-2 rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" type="button" onClick={() => handleDelete(parking.id)}>
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      Delete
-                    </button>
                   </div>
                 </article>
               ))}
             </div>
-            {!isLoading && parkings.length === 0 ? <p className="rounded-md border border-slate-200 bg-white p-6 text-slate-600">No parking listings yet.</p> : null}
-          </section>
+          )}
+        </Panel>
 
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-950">Reservation operations</h2>
-                <p className="mt-1 text-sm text-slate-600">Monitor and complete bookings across your listings.</p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  Status
-                  <select className="rounded-md border border-slate-300 px-3 py-2" onChange={(event) => setBookingFilters((current) => ({ ...current, status: event.target.value }))} value={bookingFilters.status}>
-                    <option value="">All</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="completed">Completed</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  Parking
-                  <select className="rounded-md border border-slate-300 px-3 py-2" onChange={(event) => setBookingFilters((current) => ({ ...current, parking: event.target.value }))} value={bookingFilters.parking}>
-                    <option value="">All listings</option>
-                    {parkings.map((parking) => (
-                      <option key={parking.id} value={parking.id}>{parking.title}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            {ownerSummary?.perListingEarnings?.length ? (
-              <div className="mb-4 grid gap-3 md:grid-cols-2">
-                {ownerSummary.perListingEarnings.map((item) => (
-                  <div className="rounded-md border border-slate-200 p-3" key={item.parking}>
-                    <p className="text-sm font-semibold text-slate-950">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{item.bookings} revenue bookings - Rs {item.estimatedRevenue}</p>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="grid gap-3">
-              {ownerBookings.map((booking) => (
-                <OwnerBookingCard
-                  booking={booking}
-                  key={booking.id}
-                  onComplete={handleCompleteBooking}
-                  parking={parkings.find((item) => item.id === booking.parking)}
-                />
-              ))}
-            </div>
-            {!isLoading && ownerBookings.length === 0 ? <p className="rounded-md border border-slate-200 p-5 text-sm text-slate-600">No bookings match these filters.</p> : null}
-          </section>
-        </div>
+        <Panel title="Operations summary" subtitle="Live booking and revenue signals for the spaces you manage.">
+          <div className="grid gap-3">
+            <GuideTile label="Reservation load" text={`${ownerSummary?.bookingCounts?.confirmed ?? 0} confirmed, ${ownerSummary?.bookingCounts?.pending ?? 0} pending, and ${ownerSummary?.bookingCounts?.completed ?? 0} completed reservations are in the current workspace.`} />
+            <GuideTile label="Best performing listing" text={topListing ? `${topListing.title} leads with Rs ${topListing.estimatedRevenue} from ${topListing.bookings} booking${topListing.bookings === 1 ? '' : 's'}.` : 'Your top earning listing will appear here as bookings accumulate.'} />
+            <GuideTile label="Capacity watch" text={`${ownerSummary?.occupiedSlotsNow ?? 0} slots are occupied right now across ${parkings.length} listing${parkings.length === 1 ? '' : 's'}.`} />
+          </div>
+        </Panel>
       </div>
+    </div>
+  );
+}
+
+function OwnerListings({ editingParking, handleCreate, handleDelete, handleMediaChange, handleUpdate, isLoading, parkings, setEditingParking }) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+      <Panel title={editingParking ? 'Edit listing' : 'Create listing'} subtitle="A dedicated listing editor panel with less clutter.">
+        <ParkingForm
+          key={editingParking?.id ?? 'create'}
+          initialParking={editingParking}
+          onCancel={editingParking ? () => setEditingParking(null) : undefined}
+          onMediaChange={handleMediaChange}
+          onSubmit={editingParking ? handleUpdate : handleCreate}
+          submitLabel={editingParking ? 'Update listing' : 'Create listing'}
+        />
+      </Panel>
+
+      <Panel title="Your listings" subtitle="Focused listing management, approvals context, and editing actions.">
+        {isLoading ? <SkeletonGrid /> : null}
+        {!isLoading && parkings.length === 0 ? <EmptyState description="Start by publishing a parking space and it will appear here." title="No listings yet" /> : null}
+        {!isLoading && parkings.length > 0 ? (
+          <div className="grid gap-4">
+            {parkings.map((parking) => (
+              <article key={parking.id} className="rounded-lg border border-slate-200 p-5">
+                {parking.coverImage ? <img alt={parking.coverImage.caption || parking.title} className="mb-4 aspect-video w-full rounded-md object-cover" src={parking.coverImage.url} /> : null}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-slate-950">{parking.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600">{parking.city}, {parking.state} - Rs {parking.hourlyPrice}/hr</p>
+                  </div>
+                  <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {parking.verificationStatus === 'pending' ? 'pending review' : parking.verificationStatus}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">{parking.availableSlots}/{parking.totalSlots} slots available</p>
+                {parking.rejectionReason ? <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">Rejection reason: {parking.rejectionReason}</p> : null}
+                <div className="mt-4 flex gap-2">
+                  <button className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => setEditingParking(parking)} type="button">
+                    <Edit3 className="h-4 w-4" aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button className="inline-flex items-center gap-2 rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => handleDelete(parking.id)} type="button">
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </Panel>
+    </div>
+  );
+}
+
+function OwnerReservations({ bookingFilters, filteredOwnerBookings, handleCompleteBooking, isLoading, parkings, setBookingFilters }) {
+  return (
+    <Panel title="Reservations" subtitle="Reservation monitoring in a dedicated operations section.">
+      <div className="mb-4 grid gap-3 lg:grid-cols-[180px_220px_minmax(0,1fr)]">
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Status
+          <select className="rounded-md border border-slate-300 px-3 py-2" onChange={(event) => setBookingFilters((current) => ({ ...current, status: event.target.value }))} value={bookingFilters.status}>
+            <option value="">All</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="completed">Completed</option>
+            <option value="pending">Pending</option>
+          </select>
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Parking
+          <select className="rounded-md border border-slate-300 px-3 py-2" onChange={(event) => setBookingFilters((current) => ({ ...current, parking: event.target.value }))} value={bookingFilters.parking}>
+            <option value="">All listings</option>
+            {parkings.map((parking) => (
+              <option key={parking.id} value={parking.id}>{parking.title}</option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Search reservation
+          <div className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2">
+            <Search className="h-4 w-4 text-slate-500" aria-hidden="true" />
+            <input className="min-w-0 flex-1 outline-none" onChange={(event) => setBookingFilters((current) => ({ ...current, query: event.target.value }))} value={bookingFilters.query} />
+          </div>
+        </label>
+      </div>
+      {isLoading ? <SkeletonGrid /> : null}
+      {!isLoading && filteredOwnerBookings.length === 0 ? <EmptyState description="Bookings that match your filters will appear in this panel." title="No reservations match these filters" /> : null}
+      {!isLoading ? (
+        <div className="grid gap-3">
+          {filteredOwnerBookings.map((booking) => (
+            <OwnerBookingCard booking={booking} key={booking.id} onComplete={handleCompleteBooking} parking={parkings.find((item) => item.id === booking.parking)} />
+          ))}
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function OwnerOccupancy({ isLoading, occupancyCards, ownerSummary }) {
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <SummaryCard label="Currently occupied" value={ownerSummary?.occupiedSlotsNow ?? 0} />
+        <SummaryCard label="Currently available" value={ownerSummary?.availableSlotsNow ?? 0} />
+        <SummaryCard label="Upcoming reservation load" value={ownerSummary?.upcomingReservations ?? 0} />
+      </div>
+      <Panel title="Occupancy by listing" subtitle="This section separates utilization review from bookings and earnings.">
+        {isLoading ? <SkeletonGrid /> : null}
+        {!isLoading && occupancyCards.length === 0 ? <EmptyState description="Listing utilization appears here once you publish spaces." title="No occupancy data yet" /> : null}
+        {!isLoading && occupancyCards.length > 0 ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {occupancyCards.map((parking) => (
+              <article className="rounded-lg border border-slate-200 p-5" key={parking.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">{parking.title}</p>
+                    <p className="mt-1 text-sm text-slate-600">{parking.availableSlots}/{parking.totalSlots} slots available</p>
+                  </div>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700">{parking.utilization}% utilized</span>
+                </div>
+                <div className="mt-4 h-2 rounded-full bg-slate-200">
+                  <div className="h-2 rounded-full bg-brand-600" style={{ width: `${parking.utilization}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </Panel>
+    </div>
+  );
+}
+
+function OwnerEarnings({ ownerSummary, parkings }) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+      <Panel title="Earnings" subtitle="Revenue cards and per-listing performance in one place.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary?.estimatedRevenue ?? 0}`} />
+          <SummaryCard label="Revenue listings" value={ownerSummary?.perListingEarnings?.filter((item) => item.estimatedRevenue > 0).length ?? 0} />
+        </div>
+      </Panel>
+      <Panel title="Per-listing breakdown" subtitle="Use this to quickly identify your strongest spaces.">
+        {ownerSummary?.perListingEarnings?.length ? (
+          <div className="grid gap-3">
+            {ownerSummary.perListingEarnings.map((item) => (
+              <div className="rounded-md border border-slate-200 p-4" key={item.parking}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-600">{item.bookings} revenue bookings</p>
+                  </div>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700">Rs {item.estimatedRevenue}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState description="Revenue breakdown will appear as completed and confirmed bookings accumulate." title="No earnings yet" />
+        )}
+        {parkings.length === 0 ? <p className="mt-4 text-sm text-slate-500">Publishing listings is the first step toward revenue insight.</p> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function Panel({ children, subtitle, title }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+      <div className="mt-6">{children}</div>
     </section>
   );
 }
@@ -243,6 +387,38 @@ function SummaryCard({ label, value }) {
       <BarChart3 className="mb-3 h-5 w-5 text-brand-600" aria-hidden="true" />
       <p className="text-sm text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function GuideTile({ label, text }) {
+  return (
+    <div className="rounded-md border border-slate-200 p-4">
+      <p className="font-semibold text-slate-950">{label}</p>
+      <p className="mt-1 text-sm text-slate-600">{text}</p>
+    </div>
+  );
+}
+
+function EmptyState({ description, title }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+      <p className="font-semibold text-slate-950">{title}</p>
+      <p className="mt-2 text-sm text-slate-600">{description}</p>
+    </div>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="animate-pulse rounded-lg border border-slate-200 bg-white p-5" key={item}>
+          <div className="h-5 w-2/3 rounded bg-slate-200" />
+          <div className="mt-4 h-4 w-1/2 rounded bg-slate-200" />
+          <div className="mt-5 h-16 rounded bg-slate-100" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -282,5 +458,26 @@ function bookingStatusClass(status) {
 }
 
 function toBookingParams(filters) {
-  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
+  return Object.fromEntries(Object.entries(filters).filter(([key, value]) => key !== 'query' && value));
+}
+
+function readOwnerCache() {
+  if (typeof sessionStorage === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = sessionStorage.getItem(OWNER_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOwnerCache(value) {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+
+  sessionStorage.setItem(OWNER_CACHE_KEY, JSON.stringify(value));
 }

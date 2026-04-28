@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
+import { getDefaultRouteForRole } from '../../app/navigation.js';
 import { AuthForm } from './AuthForm.jsx';
 import { FormField } from './FormField.jsx';
 import { useAuth } from './useAuth.js';
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     name: '',
@@ -19,7 +20,7 @@ export function RegisterPage() {
   });
 
   if (isAuthenticated) {
-    return <Navigate replace to="/dashboard" />;
+    return <Navigate replace to={getDefaultRouteForRole(user?.role)} />;
   }
 
   function updateField(event) {
@@ -36,7 +37,7 @@ export function RegisterPage() {
     try {
       const response = await apiClient.post('/auth/register', form);
       login(response.data.data);
-      navigate('/dashboard');
+      navigate(getDefaultRouteForRole(response.data.data.user?.role));
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to create account right now'));
     }

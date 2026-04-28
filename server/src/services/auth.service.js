@@ -11,7 +11,35 @@ export function getSafeUser(user) {
     email: user.email,
     role: user.role,
     phone: user.phone,
-    status: user.status
+    status: user.status,
+    profilePhotoUrl: user.profilePhotoUrl ?? '',
+    preferences: {
+      emailNotifications: user.preferences?.emailNotifications ?? true,
+      smsNotifications: user.preferences?.smsNotifications ?? false,
+      marketingEmails: user.preferences?.marketingEmails ?? false,
+      compactMode: user.preferences?.compactMode ?? false
+    },
+    driverProfile: {
+      vehicleDetails: user.driverProfile?.vehicleDetails ?? [],
+      savedAddresses: user.driverProfile?.savedAddresses ?? [],
+      preferredParking: {
+        vehicleType: user.driverProfile?.preferredParking?.vehicleType ?? '4-wheeler',
+        maxHourlyPrice: user.driverProfile?.preferredParking?.maxHourlyPrice ?? 0,
+        coveredOnly: user.driverProfile?.preferredParking?.coveredOnly ?? false,
+        evPreferred: user.driverProfile?.preferredParking?.evPreferred ?? false
+      }
+    },
+    ownerProfile: {
+      businessName: user.ownerProfile?.businessName ?? '',
+      businessType: user.ownerProfile?.businessType ?? '',
+      taxId: user.ownerProfile?.taxId ?? '',
+      supportEmail: user.ownerProfile?.supportEmail ?? '',
+      supportPhone: user.ownerProfile?.supportPhone ?? ''
+    },
+    adminProfile: {
+      notificationChannel: user.adminProfile?.notificationChannel ?? 'email',
+      notes: user.adminProfile?.notes ?? ''
+    }
   };
 }
 
@@ -88,4 +116,62 @@ export async function loginUser(input) {
     user: getSafeUser(user),
     token
   };
+}
+
+export async function updateCurrentUser(user, input, deps = {}) {
+  const UserModel = deps.UserModel ?? User;
+  const nextEmail = input.email.toLowerCase();
+
+  if (nextEmail !== user.email) {
+    const existingUser = await UserModel.findOne({ email: nextEmail });
+
+    if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+      throw createHttpError(409, 'An account with this email already exists');
+    }
+  }
+
+  user.name = input.name;
+  user.email = nextEmail;
+  user.phone = input.phone ?? '';
+  user.profilePhotoUrl = input.profilePhotoUrl ?? '';
+  user.preferences = {
+    ...user.preferences,
+    ...input.preferences
+  };
+
+  if (user.role === 'driver' && input.driverProfile) {
+    user.driverProfile = input.driverProfile;
+  }
+
+  if (user.role === 'owner' && input.ownerProfile) {
+    user.ownerProfile = input.ownerProfile;
+  }
+
+  if (user.role === 'admin' && input.adminProfile) {
+    user.adminProfile = input.adminProfile;
+  }
+
+  await user.save();
+
+  return getSafeUser(user);
+}
+
+export async function updateCurrentUserPassword(user, input, deps = {}) {
+  const UserModel = deps.UserModel ?? User;
+  const fullUser = await UserModel.findById(user._id).select('+passwordHash');
+
+  if (!fullUser) {
+    throw createHttpError(404, 'User not found');
+  }
+
+  const passwordMatches = await bcrypt.compare(input.currentPassword, fullUser.passwordHash);
+
+  if (!passwordMatches) {
+    throw createHttpError(401, 'Current password is incorrect');
+  }
+
+  fullUser.passwordHash = await bcrypt.hash(input.newPassword, 12);
+  await fullUser.save();
+
+  return getSafeUser(fullUser);
 }

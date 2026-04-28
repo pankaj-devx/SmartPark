@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
 import { BookingModal } from '../bookings/BookingModal.jsx';
+import { isSavedParking, recordRecentlyViewedParking, toggleSavedParking } from '../account/accountExperience.js';
 import { useAuth } from '../auth/useAuth.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from './parkingApi.js';
@@ -14,6 +15,7 @@ export function ParkingDetailPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     async function loadParking() {
@@ -21,7 +23,10 @@ export function ParkingDetailPage() {
       setIsLoading(true);
 
       try {
-        setParking(await fetchParkingById(id));
+        const parkingDetail = await fetchParkingById(id);
+        setParking(parkingDetail);
+        setIsSaved(isSavedParking(parkingDetail.id));
+        recordRecentlyViewedParking(parkingDetail);
       } catch (apiError) {
         setError(getApiErrorMessage(apiError, 'Unable to load parking details'));
       } finally {
@@ -41,6 +46,15 @@ export function ParkingDetailPage() {
           }
         : current
     );
+  }
+
+  function handleToggleSaved() {
+    if (!parking) {
+      return;
+    }
+
+    toggleSavedParking(parking);
+    setIsSaved((current) => !current);
   }
 
   return (
@@ -104,6 +118,10 @@ export function ParkingDetailPage() {
                   {parking.isOpen24x7 ? 'Open 24x7' : `${parking.operatingHours.open} to ${parking.operatingHours.close}`}
                 </p>
               </div>
+              <button className="mt-4 inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={handleToggleSaved} type="button">
+                {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
+                {isSaved ? 'Saved to favorites' : 'Save parking'}
+              </button>
               {isAuthenticated ? (
                 <button
                   className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
