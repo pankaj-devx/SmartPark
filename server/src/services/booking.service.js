@@ -100,6 +100,27 @@ export async function listMyBookings(user, deps = {}) {
   return bookings.map(serializeBooking);
 }
 
+export async function listAllBookings(query = {}, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+  const filter = {};
+
+  if (query.status) {
+    filter.status = query.status;
+  }
+
+  if (query.parking) {
+    filter.parking = query.parking;
+  }
+
+  if (query.user) {
+    filter.user = query.user;
+  }
+
+  const bookings = await BookingModel.find(filter).sort({ createdAt: -1, _id: 1 }).lean();
+
+  return bookings.map(serializeBooking);
+}
+
 export async function getBookingDetail(id, user, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const booking = await findBookingById(BookingModel, id);

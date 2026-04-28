@@ -4,6 +4,12 @@ import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { createParking, deleteParking, fetchMyParkings, updateParking, uploadParkingImages } from './parkingApi.js';
 import { ParkingForm } from './ParkingForm.jsx';
 
+const statusStyles = {
+  pending: 'bg-amber-50 text-amber-700',
+  approved: 'bg-brand-50 text-brand-700',
+  rejected: 'bg-red-50 text-red-700'
+};
+
 export function OwnerParkingDashboard() {
   const [error, setError] = useState('');
   const [editingParking, setEditingParking] = useState(null);
@@ -119,12 +125,16 @@ export function OwnerParkingDashboard() {
                       {parking.city}, {parking.state} · Rs {parking.hourlyPrice}/hr
                     </p>
                   </div>
-                  <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-700">{parking.verificationStatus}</span>
+                  <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {parking.verificationStatus === 'pending' ? 'pending review' : parking.verificationStatus}
+                  </span>
                 </div>
                 <p className="mt-3 text-sm text-slate-600">
                   {parking.availableSlots}/{parking.totalSlots} slots available
                 </p>
-                {parking.rejectionReason ? <p className="mt-3 text-sm text-red-700">Reason: {parking.rejectionReason}</p> : null}
+                {parking.rejectionReason ? (
+                  <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">Rejection reason: {parking.rejectionReason}</p>
+                ) : null}
                 <div className="mt-4 flex gap-2">
                   <button className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" type="button" onClick={() => setEditingParking(parking)}>
                     <Edit3 className="h-4 w-4" aria-hidden="true" />

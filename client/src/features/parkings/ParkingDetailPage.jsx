@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
+import { BookingModal } from '../bookings/BookingModal.jsx';
+import { useAuth } from '../auth/useAuth.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from './parkingApi.js';
 
 export function ParkingDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const { isAuthenticated } = useAuth();
   const [parking, setParking] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
 
   useEffect(() => {
     async function loadParking() {
@@ -26,6 +31,17 @@ export function ParkingDetailPage() {
 
     loadParking();
   }, [id]);
+
+  function handleBookingSuccess(booking) {
+    setParking((current) =>
+      current
+        ? {
+            ...current,
+            availableSlots: Math.max(0, current.availableSlots - booking.slotCount)
+          }
+        : current
+    );
+  }
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-8">
@@ -88,9 +104,36 @@ export function ParkingDetailPage() {
                   {parking.isOpen24x7 ? 'Open 24x7' : `${parking.operatingHours.open} to ${parking.operatingHours.close}`}
                 </p>
               </div>
+              {isAuthenticated ? (
+                <button
+                  className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  disabled={parking.availableSlots < 1}
+                  onClick={() => setIsBookingOpen(true)}
+                  type="button"
+                >
+                  Reserve slot
+                </button>
+              ) : (
+                <Link className="mt-5 block rounded-md bg-brand-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-brand-700" to="/login">
+                  Sign in to reserve
+                </Link>
+              )}
             </aside>
           </div>
         </article>
+      ) : null}
+
+      {parking && isBookingOpen ? (
+        <BookingModal
+          initialValues={{
+            date: searchParams.get('date') ?? '',
+            startTime: searchParams.get('startTime') ?? '',
+            endTime: searchParams.get('endTime') ?? ''
+          }}
+          onClose={() => setIsBookingOpen(false)}
+          onSuccess={handleBookingSuccess}
+          parking={parking}
+        />
       ) : null}
     </section>
   );

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test \"src/**/*.test.js\"",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -30,4 +31,3 @@
     "vite": "^7.3.0"
   }
 }
-

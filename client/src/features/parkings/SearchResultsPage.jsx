@@ -173,7 +173,7 @@ export function SearchResultsPage() {
           {!isLoading && parkings.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
               {parkings.map((parking) => (
-                <ParkingResultCard key={parking.id} parking={parking} />
+                <ParkingResultCard bookingParams={getBookingParams(filters)} key={parking.id} parking={parking} />
               ))}
             </div>
           ) : null}
@@ -197,7 +197,10 @@ export function SearchResultsPage() {
   );
 }
 
-function ParkingResultCard({ parking }) {
+function ParkingResultCard({ bookingParams, parking }) {
+  const detailSearch = new URLSearchParams(bookingParams).toString();
+  const detailPath = detailSearch ? `/parkings/${parking.id}?${detailSearch}` : `/parkings/${parking.id}`;
+
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="relative bg-slate-100">
@@ -242,11 +245,21 @@ function ParkingResultCard({ parking }) {
           </span>
         ))}
       </div>
-      <Link className="mt-5 inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100" to={`/parkings/${parking.id}`}>
+      <Link className="mt-5 inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100" to={detailPath}>
         View details
       </Link>
       </div>
     </article>
+  );
+}
+
+function getBookingParams(filters) {
+  return Object.fromEntries(
+    Object.entries({
+      date: filters.date,
+      startTime: filters.startTime,
+      endTime: filters.endTime
+    }).filter(([, value]) => value)
   );
 }
 

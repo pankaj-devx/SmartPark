@@ -27,6 +27,14 @@ export function AppLayout() {
                     Owner
                   </Link>
                 )}
+                {user?.role === 'admin' && (
+                  <Link className="hover:text-slate-950" to="/admin">
+                    Admin
+                  </Link>
+                )}
+                <Link className="hover:text-slate-950" to="/bookings">
+                  Bookings
+                </Link>
                 <Link className="inline-flex items-center gap-1 hover:text-slate-950" to="/dashboard">
                   <UserRound className="h-4 w-4" aria-hidden="true" />
                   {user?.name}

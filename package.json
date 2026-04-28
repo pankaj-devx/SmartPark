@@ -14,7 +14,7 @@
     "build": "npm run build --workspace client",
     "start": "npm run start --workspace server",
     "lint": "npm run lint --workspace client && npm run lint --workspace server",
-    "test": "npm run test --workspace server"
+    "test": "npm run test --workspace server && npm run test --workspace client"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
@@ -23,4 +23,3 @@
     "node": ">=20"
   }
 }
-

@@ -281,7 +281,7 @@ export async function listNearbyParkings(query, deps = {}) {
 
 export async function listOwnerParkings(user, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
-  const parkings = await ParkingModel.find({ owner: user._id, isActive: true }).sort({ createdAt: -1 }).lean();
+  const parkings = await ParkingModel.find({ owner: user._id }).sort({ createdAt: -1 }).lean();
 
   return parkings.map(serializeParking);
 }
@@ -356,6 +356,17 @@ export async function rejectParking(id, reason = '', deps = {}) {
 
   parking.verificationStatus = 'rejected';
   parking.rejectionReason = reason;
+  parking.isActive = false;
+  await parking.save();
+
+  return serializeParking(parking);
+}
+
+export async function toggleParkingActive(id, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const parking = await findParkingById(ParkingModel, id, { includeInactive: true });
+
+  parking.isActive = !parking.isActive;
   await parking.save();
 
   return serializeParking(parking);
@@ -452,14 +463,14 @@ export async function setPrimaryParkingImage(id, imageId, user, deps = {}) {
   return serializeParking(parking);
 }
 
-async function findParkingById(ParkingModel, id) {
+async function findParkingById(ParkingModel, id, options = {}) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw createHttpError(404, 'Parking listing not found');
   }
 
   const parking = await ParkingModel.findById(id);
 
-  if (!parking || !parking.isActive) {
+  if (!parking || (!parking.isActive && !options.includeInactive)) {
     throw createHttpError(404, 'Parking listing not found');
   }
 

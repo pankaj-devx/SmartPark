@@ -8,9 +8,12 @@ import {
   buildPublicParkingFilter,
   createParking,
   listNearbyParkings,
+  listOwnerParkings,
   listPublicParkings,
   removeParkingImage,
+  rejectParking,
   setPrimaryParkingImage,
+  toggleParkingActive,
   updateParking
 } from './parking.service.js';
 import { Parking } from '../models/parking.model.js';
@@ -313,6 +316,66 @@ test('admin approval marks listing approved and active', async () => {
 
   assert.equal(approved.verificationStatus, 'approved');
   assert.equal(approved.isActive, true);
+});
+
+test('admin rejection stores reason and hides listing from discovery', async () => {
+  const document = makeParking(buildParkingCreatePayload(validInput, ownerId));
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  const rejected = await rejectParking(parkingId, 'Blurry address proof', { ParkingModel });
+  const publicFilter = buildPublicParkingFilter({});
+
+  assert.equal(rejected.verificationStatus, 'rejected');
+  assert.equal(rejected.rejectionReason, 'Blurry address proof');
+  assert.equal(rejected.isActive, false);
+  assert.deepEqual(publicFilter, { verificationStatus: 'approved', isActive: true });
+});
+
+test('owner listing history includes rejected listings with rejection reason', async () => {
+  const user = makeUser('owner', ownerId);
+  const ParkingModel = {
+    find(filter) {
+      assert.equal(filter.owner, user._id);
+      return {
+        sort() {
+          return {
+            lean: async () => [
+              makeParking({
+                ...buildParkingCreatePayload(validInput, ownerId),
+                verificationStatus: 'rejected',
+                rejectionReason: 'Missing access details',
+                isActive: false
+              })
+            ]
+          };
+        }
+      };
+    }
+  };
+
+  const parkings = await listOwnerParkings(user, { ParkingModel });
+
+  assert.equal(parkings[0].verificationStatus, 'rejected');
+  assert.equal(parkings[0].rejectionReason, 'Missing access details');
+});
+
+test('admin can toggle parking active state', async () => {
+  const document = makeParking({ ...buildParkingCreatePayload(validInput, ownerId), isActive: true });
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  const parking = await toggleParkingActive(parkingId, { ParkingModel });
+
+  assert.equal(parking.isActive, false);
 });
 
 test('owner can upload parking images and first image becomes primary', async () => {

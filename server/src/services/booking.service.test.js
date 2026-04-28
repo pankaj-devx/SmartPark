@@ -6,6 +6,7 @@ import {
   cancelBooking,
   createBooking,
   getBookingDetail,
+  listAllBookings,
   listMyBookings
 } from './booking.service.js';
 
@@ -165,6 +166,28 @@ test('booking history retrieval returns user bookings newest first', async () =>
 
   assert.equal(receivedFilter.user.toString(), userId);
   assert.deepEqual(receivedSort, { createdAt: -1, _id: 1 });
+  assert.equal(bookings.length, 1);
+});
+
+test('admin booking oversight can list all bookings with status filter', async () => {
+  let receivedFilter;
+
+  const BookingModel = {
+    find(filter) {
+      receivedFilter = filter;
+      return {
+        sort() {
+          return {
+            lean: async () => [makeBooking({ ...bookingInput, user: userId })]
+          };
+        }
+      };
+    }
+  };
+
+  const bookings = await listAllBookings({ status: 'confirmed' }, { BookingModel });
+
+  assert.deepEqual(receivedFilter, { status: 'confirmed' });
   assert.equal(bookings.length, 1);
 });
 
