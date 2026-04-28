@@ -123,10 +123,10 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="app-panel">
         <p className="text-sm font-medium uppercase text-brand-700">Admin control panel</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-950">Platform operations workspace</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Moderation, operational monitoring, reporting context, and settings now live in section-switched control panels instead of a long vertical dashboard.</p>
+        <h1 className="app-heading mt-2 text-3xl font-bold">Operate the marketplace with signal, not clutter</h1>
+        <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Moderation, booking oversight, reporting, and user review stay separated into focused surfaces so platform decisions are faster and easier to trust.</p>
       </div>
 
       {error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -153,14 +153,14 @@ function AdminOverview({ bookingMetrics, dashboard }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-        <Panel title="Moderation snapshot" subtitle="The key platform signals are easier to scan in a dedicated overview panel.">
+        <Panel title="Moderation snapshot" subtitle="Keep the approvals queue, listing health, and booking exposure visible at a glance.">
           <div className="grid gap-3">
             <GuideTile label="Approvals queue" text={`${dashboard?.summary.pendingApprovals ?? 0} listings are currently waiting for review.`} />
             <GuideTile label="Platform listings" text={`${dashboard?.summary.approvedListings ?? 0} listings are available in the approved pool.`} />
             <GuideTile label="Booking operations" text={`${dashboard?.summary.totalBookings ?? 0} bookings are visible through the oversight layer.`} />
           </div>
         </Panel>
-        <Panel title="Operational posture" subtitle="A more product-grade frame for admin work.">
+        <Panel title="Operational posture" subtitle="Use this command-center view to understand where attention is needed next.">
           <div className="grid gap-3">
             <GuideTile label="Users" text={`${dashboard?.userMetrics?.owners ?? 0} owners and ${dashboard?.userMetrics?.drivers ?? 0} drivers are visible in the user operations panel.`} />
             <GuideTile label="Reports" text={`${bookingMetrics.confirmed} confirmed bookings and ${dashboard?.summary.inactiveListings ?? 0} inactive listings are rolled into the reports section.`} />
@@ -239,7 +239,7 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectRea
 
 function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, setBookingSearch, setBookingStatus }) {
   return (
-    <Panel title="Bookings" subtitle="Read-only platform oversight with cleaner separation from moderation work.">
+      <Panel title="Bookings" subtitle="Review booking flow, user context, and exception patterns without leaving the admin workspace.">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="grid gap-3 md:grid-cols-[180px_260px]">
           <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -286,7 +286,7 @@ function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, setBook
 
 function AdminUsers({ filteredUsers, search, setSearch, setUserRoleFilter, userMetrics, userRoleFilter }) {
   return (
-    <Panel title="Users" subtitle="Searchable user operations backed by the real admin dashboard dataset.">
+      <Panel title="Users" subtitle="Search and review the active marketplace population with less noise.">
       <div className="grid gap-4 md:grid-cols-3">
         <SummaryCard label="Drivers" value={userMetrics?.drivers ?? 0} />
         <SummaryCard label="Owners" value={userMetrics?.owners ?? 0} />
@@ -337,7 +337,7 @@ function AdminUsers({ filteredUsers, search, setSearch, setUserRoleFilter, userM
 function AdminReports({ bookingMetrics, dashboard }) {
   return (
     <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <Panel title="Reports" subtitle="Operational summaries built from real booking, approval, and user data.">
+      <Panel title="Reports" subtitle="See the marketplace in aggregate before you drill into a single queue or user group.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SummaryCard label="Approved listings" value={dashboard?.summary.approvedListings ?? 0} />
           <SummaryCard label="Total bookings" value={dashboard?.summary.totalBookings ?? 0} />
@@ -347,7 +347,7 @@ function AdminReports({ bookingMetrics, dashboard }) {
           <SummaryCard label="Pending approvals" value={dashboard?.summary.pendingApprovals ?? 0} />
         </div>
       </Panel>
-      <Panel title="Operational notes" subtitle="A steadier information hierarchy for admin review.">
+      <Panel title="Operational notes" subtitle="Short reads on the signals that usually drive the next admin action.">
         <div className="grid gap-3">
           <GuideTile label="Approval volume" text={`${dashboard?.summary.pendingApprovals ?? 0} listings remain in the moderation backlog.`} />
           <GuideTile label="Booking distribution" text={`${bookingMetrics.confirmed} confirmed, ${bookingMetrics.completed} completed, and ${bookingMetrics.cancelled} cancelled bookings are currently visible.`} />
@@ -360,9 +360,9 @@ function AdminReports({ bookingMetrics, dashboard }) {
 
 function Panel({ children, subtitle, title }) {
   return (
-    <section className="mt-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+    <section className="mt-6 app-panel">
+      <h2 className="app-heading text-xl font-semibold">{title}</h2>
+      <p className="app-copy mt-2 text-sm">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -370,9 +370,9 @@ function Panel({ children, subtitle, title }) {
 
 function SummaryCard({ label, value }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
+    <div className="app-stat">
+      <p className="app-copy-soft text-sm">{label}</p>
+      <p className="app-heading mt-2 text-3xl font-bold">{value}</p>
     </div>
   );
 }

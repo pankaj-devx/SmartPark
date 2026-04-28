@@ -11,6 +11,7 @@ import {
   getSavedParkings
 } from '../features/account/accountExperience.js';
 import { fetchParkingById } from '../features/parkings/parkingApi.js';
+import { buildDiscoveryPath } from '../features/parkings/discoveryFilters.js';
 import { useAuth } from '../features/auth/useAuth.js';
 import { fetchMyBookings } from '../features/bookings/bookingApi.js';
 import { getApiErrorMessage } from '../lib/getApiErrorMessage.js';
@@ -78,18 +79,18 @@ export function DashboardPage({ activeSection = 'overview' }) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
-      <div className="grid gap-6 xl:grid-cols-[230px_minmax(0,1fr)]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-6 xl:h-fit">
+      <div className="grid gap-5 xl:grid-cols-[250px_minmax(0,1fr)]">
+        <aside className="app-panel xl:sticky xl:top-6 xl:h-fit">
           <p className="text-sm font-medium uppercase text-brand-700">Driver workspace</p>
-          <h1 className="mt-2 text-2xl font-bold text-slate-950">Welcome back, {user?.name}</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Everything you need for booking, favorites, reminders, and account care.</p>
+          <h1 className="app-heading mt-2 text-2xl font-bold">Welcome back, {user?.name}</h1>
+          <p className="app-copy mt-2 text-sm leading-6">Reservations, saved spaces, reminders, and account controls stay close without wasting space.</p>
 
-          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Profile completion</p>
-            <div className="mt-3 h-2 rounded-full bg-slate-200">
+          <div className="app-card-muted mt-5">
+            <p className="app-copy-soft text-sm">Account readiness</p>
+            <div className="mt-3 h-2 rounded-full" style={{ background: 'var(--app-border)' }}>
               <div className="h-2 rounded-full bg-brand-600" style={{ width: `${completionScore}%` }} />
             </div>
-            <p className="mt-2 text-sm font-semibold text-slate-950">{completionScore}% complete</p>
+            <p className="app-heading mt-2 text-sm font-semibold">{completionScore}% complete</p>
           </div>
 
           <nav className="mt-5 hidden gap-2 xl:grid">
@@ -135,19 +136,19 @@ export function DashboardPage({ activeSection = 'overview' }) {
 function OverviewSection({ completionScore, isLoading, recentBookings, recentSearches, reminders, savedParkings, upcomingBookings }) {
   return (
     <div className="grid gap-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section className="app-panel">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-sm font-medium uppercase text-brand-700">Overview</p>
-            <h2 className="mt-2 text-3xl font-bold text-slate-950">Your parking day at a glance</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Upcoming reservations, saved places, recent behavior, and account health in one practical view.</p>
+            <h2 className="app-heading mt-2 text-3xl font-bold">Everything you need before you leave</h2>
+            <p className="app-copy mt-2 max-w-2xl text-sm leading-6">See the next reservation, resume a search, and keep your shortlist moving without bouncing across duplicate screens.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to="/parkings">
-              Find parking
+            <Link className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={recentSearches[0] ? buildDiscoveryPath({ search: recentSearches[0].label }) : '/parkings'}>
+              {recentSearches[0] ? 'Resume discovery' : 'Start discovery'}
             </Link>
-            <Link className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to="/settings">
-              Complete profile
+            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold hover:bg-slate-100" style={{ borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }} to="/bookings">
+              Review reservations
             </Link>
           </div>
         </div>
@@ -212,14 +213,14 @@ function OverviewSection({ completionScore, isLoading, recentBookings, recentSea
               <EmptyState description="Your recent searches will start showing up after you explore a few areas." title="No recent searches yet" />
             ) : (
               <div className="grid gap-3">
-                {recentSearches.map((searchItem) => (
-                  <div className="rounded-md border border-slate-200 p-4" key={searchItem.label}>
-                    <p className="font-semibold text-slate-950">{searchItem.label}</p>
-                    <p className="mt-1 text-sm text-slate-600">{new Date(searchItem.createdAt).toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+              {recentSearches.map((searchItem) => (
+                  <Link className="app-card block transition hover:border-brand-300 hover:bg-brand-50" key={searchItem.label} to={buildDiscoveryPath({ search: searchItem.label })}>
+                    <p className="app-heading font-semibold">{searchItem.label}</p>
+                    <p className="app-copy mt-1 text-sm">{new Date(searchItem.createdAt).toLocaleString()}</p>
+                  </Link>
+              ))}
+            </div>
+          )}
           </Panel>
         </div>
       ) : null}
@@ -285,7 +286,7 @@ function SavedSection({ savedParkings }) {
 function ActivitySection({ recentActivity, recentSearches, recentlyViewed }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-      <Panel title="Recent activity" subtitle="A simple timeline that makes the account feel alive.">
+      <Panel title="Recent activity" subtitle="A clear trail of the places and actions shaping your next reservation.">
         {recentActivity.length === 0 ? (
           <EmptyState description="Searches, saved parkings, and viewed listings will begin to fill this timeline." title="No recent activity yet" />
         ) : (
@@ -336,8 +337,8 @@ function NotificationsSection({ recentActivity, reminders, upcomingBookings }) {
   return (
     <Panel title="Notifications" subtitle="Reservation reminders and account follow-up based on your current activity.">
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 p-5">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-950">
+        <div className="app-card">
+          <div className="app-heading inline-flex items-center gap-2 text-sm font-semibold">
             <Bell className="h-4 w-4 text-brand-600" aria-hidden="true" />
             Booking reminders
           </div>
@@ -354,15 +355,15 @@ function NotificationsSection({ recentActivity, reminders, upcomingBookings }) {
             </div>
           )}
         </div>
-        <div className="rounded-lg border border-slate-200 p-5">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-950">
+        <div className="app-card">
+          <div className="app-heading inline-flex items-center gap-2 text-sm font-semibold">
             <Settings2 className="h-4 w-4 text-brand-600" aria-hidden="true" />
-            Product nudges
+            Account cues
           </div>
           <div className="mt-4 grid gap-3">
-            <NotificationTile text={`You have ${upcomingBookings.length} active reservation${upcomingBookings.length === 1 ? '' : 's'} in your account.`} title="Upcoming booking watch" />
-            <NotificationTile text="Fine-tune reminder preferences, privacy, and saved places from the settings section." title="Account setup" />
-            <NotificationTile text={recentActivity.length ? 'Recent account activity is available in the activity section for quick review.' : 'Searches and saved parking activity will show up here after a few more account actions.'} title="Recent account activity" />
+            <NotificationTile text={`You currently have ${upcomingBookings.length} active reservation${upcomingBookings.length === 1 ? '' : 's'} on the books.`} title="Upcoming reservations" />
+            <NotificationTile text="Notification settings, appearance, and privacy controls are available from account settings." title="Preferences" />
+            <NotificationTile text={recentActivity.length ? 'Recent activity is ready to review when you want a quick recap.' : 'Searches, saved spaces, and viewed listings will start surfacing here as you use SmartPark more.'} title="Activity feed" />
           </div>
         </div>
       </div>
@@ -378,8 +379,9 @@ function SectionLink({ activeSection, label, mobile = false, sectionId }) {
       className={[
         'rounded-md text-sm font-semibold transition',
         mobile ? 'shrink-0 px-3 py-2' : 'px-3 py-2.5 text-left',
-        activeSection === sectionId ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+        activeSection === sectionId ? 'bg-slate-950 text-white shadow-sm' : ''
       ].join(' ')}
+      style={({ isActive }) => (!isActive ? { background: 'var(--app-surface)', color: 'var(--app-text-muted)', border: '1px solid var(--app-border)' } : undefined)}
       to={to}
     >
       {label}
@@ -390,19 +392,19 @@ function SectionLink({ activeSection, label, mobile = false, sectionId }) {
 function StatCard({ icon, label, value }) {
   const Icon = icon;
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="app-stat">
       <Icon className="h-5 w-5 text-brand-600" aria-hidden="true" />
-      <p className="mt-3 text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
+      <p className="app-copy-soft mt-3 text-sm">{label}</p>
+      <p className="app-heading mt-2 text-2xl font-bold">{value}</p>
     </article>
   );
 }
 
 function Panel({ children, subtitle, title }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+    <section className="app-panel">
+      <h2 className="app-heading text-xl font-semibold">{title}</h2>
+      <p className="app-copy mt-2 text-sm">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -410,9 +412,9 @@ function Panel({ children, subtitle, title }) {
 
 function EmptyState({ description, title }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-      <p className="font-semibold text-slate-950">{title}</p>
-      <p className="mt-2 text-sm text-slate-600">{description}</p>
+    <div className="rounded-lg border border-dashed p-6 text-center" style={{ borderColor: 'var(--app-border-strong)', background: 'var(--app-surface-muted)' }}>
+      <p className="app-heading font-semibold">{title}</p>
+      <p className="app-copy mt-2 text-sm">{description}</p>
     </div>
   );
 }
@@ -455,9 +457,9 @@ function MiniParkingCard({ parking }) {
 
 function NotificationTile({ text, title }) {
   return (
-    <div className="rounded-md bg-slate-50 p-4">
-      <p className="font-semibold text-slate-950">{title}</p>
-      <p className="mt-1 text-sm text-slate-600">{text}</p>
+    <div className="app-card-muted">
+      <p className="app-heading font-semibold">{title}</p>
+      <p className="app-copy mt-1 text-sm">{text}</p>
     </div>
   );
 }

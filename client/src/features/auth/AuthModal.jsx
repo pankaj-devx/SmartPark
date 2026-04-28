@@ -1,0 +1,148 @@
+import { useState } from 'react';
+import { X } from 'lucide-react';
+import { apiClient } from '../../lib/apiClient.js';
+import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
+import { useAuth } from './useAuth.js';
+import { FormField } from './FormField.jsx';
+
+export function AuthModal({ isOpen, onClose, onSuccess, title = 'Sign in required' }) {
+  const { login } = useAuth();
+  const [mode, setMode] = useState('login'); // 'login' or 'register'
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'driver',
+    phone: ''
+  });
+
+  if (!isOpen) return null;
+
+  function updateField(event) {
+    setForm((current) => ({
+      ...current,
+      [event.target.name]: event.target.value
+    }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
+      const payload = mode === 'login' ? { email: form.email, password: form.password } : form;
+      
+      const response = await apiClient.post(endpoint, payload);
+      login(response.data.data);
+      onSuccess?.();
+      onClose();
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError, `Unable to ${mode === 'login' ? 'sign in' : 'create account'} right now`));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl relative max-h-[90vh] overflow-y-auto">
+        <button
+          className="absolute right-4 top-4 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+          onClick={onClose}
+          type="button"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+
+        <h2 className="text-2xl font-bold text-slate-950">{title}</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          {mode === 'login' 
+            ? 'Please sign in to continue with your action.' 
+            : 'Create an account to continue.'}
+        </p>
+
+        {error ? (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
+          {mode === 'register' && (
+            <FormField autoComplete="name" label="Full name" name="name" onChange={updateField} required value={form.name} />
+          )}
+          
+          <FormField autoComplete="email" label="Email" name="email" onChange={updateField} required type="email" value={form.email} />
+          
+          <FormField
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            label="Password"
+            minLength={mode === 'register' ? 8 : undefined}
+            name="password"
+            onChange={updateField}
+            required
+            type="password"
+            value={form.password}
+          />
+          
+          {mode === 'register' && (
+            <>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Account type
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
+                  name="role"
+                  onChange={updateField}
+                  value={form.role}
+                >
+                  <option value="driver">Driver</option>
+                  <option value="owner">Parking owner</option>
+                </select>
+              </label>
+              <FormField autoComplete="tel" label="Phone (optional)" name="phone" onChange={updateField} type="tel" value={form.phone} />
+            </>
+          )}
+
+          <button 
+            className="mt-2 rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-70" 
+            disabled={isLoading}
+            type="submit"
+          >
+            {isLoading ? 'Please wait...' : (mode === 'login' ? 'Sign in' : 'Create account')}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-sm text-slate-600">
+          {mode === 'login' ? (
+            <p>
+              Don't have an account?{' '}
+              <button 
+                className="font-semibold text-brand-700 hover:text-brand-600" 
+                onClick={() => { setMode('register'); setError(''); }}
+                type="button"
+              >
+                Sign up
+              </button>
+            </p>
+          ) : (
+            <p>
+              Already have an account?{' '}
+              <button 
+                className="font-semibold text-brand-700 hover:text-brand-600" 
+                onClick={() => { setMode('login'); setError(''); }}
+                type="button"
+              >
+                Sign in
+              </button>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

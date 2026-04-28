@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { BadgeCheck, Bell, Building2, Camera, KeyRound, Mail, Phone, ShieldCheck, TriangleAlert, UserRound } from 'lucide-react';
+import { BadgeCheck, Bell, Building2, Camera, KeyRound, Mail, Monitor, Moon, Phone, ShieldCheck, SunMedium, TriangleAlert, UserRound } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { useAuth } from '../auth/useAuth.js';
+import { useTheme } from '../theme/useTheme.js';
 import { updateMyPassword, updateMyProfile } from './profileApi.js';
 import { buildProfilePayload, getInitialProfileForm, validateProfileForm, validateProfileImageFile } from './profileUtils.js';
 
-export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false, showHeader = true }) {
+export function AccountSettingsPanel({ defaultTab = 'profile', showHeader = true }) {
   const { updateUser, user } = useAuth();
+  const { resolvedTheme, setTheme, theme } = useTheme();
   const [profileForm, setProfileForm] = useState(() => getInitialProfileForm(user));
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
@@ -140,7 +142,7 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
   return (
     <section className="grid gap-6">
       {showHeader ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="app-panel">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="flex items-start gap-4">
               <div className="relative">
@@ -158,11 +160,11 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
               </div>
               <div>
                 <p className="text-sm font-medium uppercase text-brand-700">Account experience</p>
-                <h1 className="mt-2 text-3xl font-bold text-slate-950">{user?.name}</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{roleSummary.description}</p>
+                <h1 className="app-heading mt-2 text-3xl font-bold">{user?.name}</h1>
+                <p className="app-copy mt-2 max-w-2xl text-sm leading-6">{roleSummary.description}</p>
               </div>
             </div>
-            <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <div className="app-card-muted grid gap-2 text-sm">
               <SummaryPill icon={Mail} label={maskEmail(user?.email)} />
               <SummaryPill icon={Phone} label={maskPhone(user?.phone) || 'Phone not added'} />
               <SummaryPill icon={BadgeCheck} label={`Status: ${user?.status}`} />
@@ -171,14 +173,12 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
         </div>
       ) : null}
 
-      <nav className={`flex gap-2 overflow-x-auto ${embedded ? '' : ''}`}>
+      <nav className="flex gap-2 overflow-x-auto pb-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
-              className={`inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${
-                activeTab === tab.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-              }`}
+              className={`app-tab ${activeTab === tab.id ? 'app-tab-active' : ''}`}
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               type="button"
@@ -209,12 +209,24 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
         ) : null}
 
         {activeTab === 'preferences' ? (
-          <SettingsCard title="Account preferences" subtitle="Tune how SmartPark behaves for your account.">
-            <div className="grid gap-3 md:grid-cols-2">
+          <SettingsCard title="Preferences" subtitle="Shape notifications, density, and the visual experience you use every day.">
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="grid gap-3 md:grid-cols-2">
               <ToggleField checked={profileForm.preferences.emailNotifications} label="Email notifications" onChange={(checked) => updateProfileField('preferences.emailNotifications', checked)} />
               <ToggleField checked={profileForm.preferences.smsNotifications} label="SMS notifications" onChange={(checked) => updateProfileField('preferences.smsNotifications', checked)} />
               <ToggleField checked={profileForm.preferences.marketingEmails} label="Marketing emails" onChange={(checked) => updateProfileField('preferences.marketingEmails', checked)} />
               <ToggleField checked={profileForm.preferences.compactMode} label="Compact settings layout" onChange={(checked) => updateProfileField('preferences.compactMode', checked)} />
+              </div>
+              <div className="app-card-muted">
+                <p className="app-heading text-sm font-semibold">Appearance</p>
+                <p className="app-copy mt-2 text-sm leading-6">Choose a theme that fits your environment. SmartPark remembers the preference on this device.</p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <ThemeOptionButton currentTheme={theme} icon={SunMedium} label="Light" onClick={() => setTheme('light')} option="light" />
+                  <ThemeOptionButton currentTheme={theme} icon={Moon} label="Dark" onClick={() => setTheme('dark')} option="dark" />
+                  <ThemeOptionButton currentTheme={theme} icon={Monitor} label="System" onClick={() => setTheme('system')} option="system" />
+                </div>
+                <p className="app-copy-soft mt-3 text-xs">Active appearance: {resolvedTheme}</p>
+              </div>
             </div>
           </SettingsCard>
         ) : null}
@@ -342,7 +354,7 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
         ) : null}
 
         {activeTab === 'support' ? (
-          <SettingsCard title="Support and account care" subtitle="Quick access to help, issue reporting, and account follow-up details.">
+          <SettingsCard title="Support and account care" subtitle="Know where account help, reminders, and security guidance live before you need them.">
             <div className="grid gap-4 md:grid-cols-2">
               <SupportCard icon={Bell} label="Booking reminders" text="Notification preferences are managed in account settings, so reminders can stay aligned with your booking activity." />
               <SupportCard icon={TriangleAlert} label="Report an issue" text="Use support contact details on your account when you need help with reservations, listing issues, or payments." />
@@ -394,7 +406,7 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
           </div>
 
           <div className="mt-6 flex justify-end">
-            <button className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60" disabled={isSavingPassword} type="submit">
+            <button className="rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={isSavingPassword} style={{ borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }} type="submit">
               {isSavingPassword ? 'Updating...' : 'Update password'}
             </button>
           </div>
@@ -406,9 +418,9 @@ export function AccountSettingsPanel({ defaultTab = 'profile', embedded = false,
 
 function SettingsCard({ children, subtitle, title }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+    <section className="app-panel">
+      <h2 className="app-heading text-xl font-semibold">{title}</h2>
+      <p className="app-copy mt-2 text-sm">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -418,7 +430,7 @@ function TextField({ label, ...props }) {
   return (
     <label className="grid gap-2 text-sm font-medium text-slate-700">
       {label}
-      <input className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" {...props} />
+      <input className="app-input" {...props} />
     </label>
   );
 }
@@ -427,7 +439,7 @@ function TextAreaField({ label, ...props }) {
   return (
     <label className="grid gap-2 text-sm font-medium text-slate-700">
       {label}
-      <textarea className="min-h-28 rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" {...props} />
+      <textarea className="app-input min-h-28" {...props} />
     </label>
   );
 }
@@ -436,7 +448,7 @@ function SelectField({ label, options, ...props }) {
   return (
     <label className="grid gap-2 text-sm font-medium text-slate-700">
       {label}
-      <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" {...props}>
+      <select className="app-input" {...props}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -449,7 +461,7 @@ function SelectField({ label, options, ...props }) {
 
 function ToggleField({ checked, label, onChange }) {
   return (
-    <label className="flex items-center justify-between gap-4 rounded-md border border-slate-200 p-4 text-sm font-medium text-slate-700">
+    <label className="app-card flex items-center justify-between gap-4 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
       <span>{label}</span>
       <input checked={checked} className="h-4 w-4 accent-brand-600" onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
@@ -460,7 +472,7 @@ function SummaryPill({ icon, label }) {
   const Icon = icon;
   return (
     <div className="inline-flex items-center gap-2">
-      <Icon className="h-4 w-4 text-slate-500" aria-hidden="true" />
+      <Icon className="h-4 w-4" style={{ color: 'var(--app-text-soft)' }} aria-hidden="true" />
       <span>{label}</span>
     </div>
   );
@@ -469,12 +481,12 @@ function SummaryPill({ icon, label }) {
 function PermissionCard({ icon, label, value }) {
   const Icon = icon;
   return (
-    <div className="rounded-md border border-slate-200 p-4">
-      <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+    <div className="app-card">
+      <div className="app-copy-soft inline-flex items-center gap-2 text-sm">
         <Icon className="h-4 w-4" aria-hidden="true" />
         {label}
       </div>
-      <p className="mt-3 font-semibold text-slate-950">{value}</p>
+      <p className="app-heading mt-3 font-semibold">{value}</p>
     </div>
   );
 }
@@ -482,22 +494,37 @@ function PermissionCard({ icon, label, value }) {
 function SupportCard({ icon, label, text }) {
   const Icon = icon;
   return (
-    <div className="rounded-md border border-slate-200 p-4">
-      <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-950">
+    <div className="app-card">
+      <div className="app-heading inline-flex items-center gap-2 text-sm font-semibold">
         <Icon className="h-4 w-4 text-brand-600" aria-hidden="true" />
         {label}
       </div>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+      <p className="app-copy mt-2 text-sm leading-6">{text}</p>
     </div>
   );
 }
 
 function SecurityCard({ text, title }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-      <p className="font-semibold text-slate-950">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    <div className="app-card-muted">
+      <p className="app-heading font-semibold">{title}</p>
+      <p className="app-copy mt-2 text-sm leading-6">{text}</p>
     </div>
+  );
+}
+
+function ThemeOptionButton({ currentTheme, icon, label, onClick, option }) {
+  const Icon = icon;
+
+  return (
+    <button
+      className={`app-tab justify-center ${currentTheme === option ? 'app-tab-active' : ''}`}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+      {label}
+    </button>
   );
 }
 
@@ -532,7 +559,7 @@ function getRoleSummary(role) {
   }
 
   return {
-    description: 'Maintain your driver profile, vehicles, saved places, privacy defaults, and everyday account preferences in one place.'
+    description: 'Keep your identity, vehicles, saved places, appearance, and privacy preferences aligned with how you actually park.'
   };
 }
 

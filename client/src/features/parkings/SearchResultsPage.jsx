@@ -1,48 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { BadgeCheck, Bookmark, BookmarkCheck, Camera, Car, MapPin, Navigation, Search, Shield, Zap } from 'lucide-react';
 import { isSavedParking, recordRecentSearch, toggleSavedParking } from '../account/accountExperience.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchNearbyParkings, fetchPublicParkings } from './parkingApi.js';
+import { filtersFromSearchParams, filtersToSearchParams, initialDiscoveryFilters, toApiParams } from './discoveryFilters.js';
 import { FilterSidebar } from './FilterSidebar.jsx';
 import { NearbyMapView } from './NearbyMapView.jsx';
 import { SearchBar } from './SearchBar.jsx';
-
-const initialFilters = {
-  search: '',
-  state: '',
-  district: '',
-  city: '',
-  area: '',
-  date: '',
-  startTime: '',
-  endTime: '',
-  vehicleType: '',
-  parkingType: '',
-  minPrice: '',
-  maxPrice: '',
-  amenities: [],
-  availableOnly: true,
-  openNow: false,
-  isOpen24x7: false,
-  sort: 'relevance',
-  lat: '',
-  lng: '',
-  radiusKm: '5'
-};
+import { useAuth } from '../auth/useAuth.js';
+import { AuthModal } from '../auth/AuthModal.jsx';
 
 export function SearchResultsPage() {
-  const [filters, setFilters] = useState(initialFilters);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlFilters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams]);
+  const [draftFilters, setDraftFilters] = useState(() => ({
+    sourceKey: searchParams.toString(),
+    values: urlFilters
+  }));
   const [parkings, setParkings] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [lastRequestKey, setLastRequestKey] = useState('');
+  const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
+  const { isAuthenticated } = useAuth();
+  const searchParamsKey = searchParams.toString();
+  const filters = draftFilters.sourceKey === searchParamsKey ? draftFilters.values : urlFilters;
 
   const activeChips = useMemo(() => buildChips(filters), [filters]);
 
   const loadParkings = useCallback(async (nextFilters) => {
-    const params = toParams(nextFilters);
+    const params = toApiParams(nextFilters);
     const requestKey = JSON.stringify(params);
 
     if (requestKey === lastRequestKey) {
@@ -69,26 +58,28 @@ export function SearchResultsPage() {
   }, [lastRequestKey]);
 
   useEffect(() => {
-    Promise.resolve().then(() => loadParkings(initialFilters));
-  }, [loadParkings]);
+    Promise.resolve().then(() => loadParkings(urlFilters));
+  }, [loadParkings, urlFilters]);
 
   function patchFilters(patch) {
-    setFilters((current) => ({
-      ...current,
-      ...patch
-    }));
+    setDraftFilters({
+      sourceKey: searchParamsKey,
+      values: {
+        ...filters,
+        ...patch
+      }
+    });
   }
 
   function submitSearch(eventOrPatch) {
     if (eventOrPatch?.preventDefault) {
       eventOrPatch.preventDefault();
-      loadParkings(filters);
+      setSearchParams(buildSearchParams(filters));
       return;
     }
 
     const nextFilters = { ...filters, ...eventOrPatch };
-    setFilters(nextFilters);
-    loadParkings(nextFilters);
+    setSearchParams(buildSearchParams(nextFilters));
   }
 
   function useBrowserLocation() {
@@ -105,15 +96,27 @@ export function SearchResultsPage() {
           lng: String(position.coords.longitude),
           sort: 'nearest'
         };
-        setFilters(nextFilters);
-        loadParkings(nextFilters);
+        setSearchParams(buildSearchParams(nextFilters));
       },
       () => setError('Unable to read your location. You can enter latitude and longitude manually.')
     );
   }
 
+  function handleAuthSuccess() {
+    if (authModalConfig.pendingAction) {
+      authModalConfig.pendingAction();
+    }
+  }
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
+      <AuthModal 
+        isOpen={authModalConfig.isOpen} 
+        onClose={() => setAuthModalConfig({ isOpen: false, pendingAction: null, title: '' })} 
+        onSuccess={handleAuthSuccess}
+        title={authModalConfig.title}
+      />
+
       <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_220px] lg:items-end">
         <div>
           <p className="text-sm font-medium uppercase text-brand-700">Discovery</p>
@@ -135,7 +138,7 @@ export function SearchResultsPage() {
         <SearchBar onChange={(search) => patchFilters({ search })} onSearch={submitSearch} value={filters.search} />
         <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => patchFilters({ lat: event.target.value })} placeholder="Lat" value={filters.lat} />
         <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => patchFilters({ lng: event.target.value })} placeholder="Lng" value={filters.lng} />
-        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" onClick={() => loadParkings(filters)} type="button">
+        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" onClick={() => setSearchParams(buildSearchParams(filters))} type="button">
           <Search className="h-4 w-4" aria-hidden="true" />
           Search
         </button>
@@ -167,9 +170,9 @@ export function SearchResultsPage() {
       ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-        <FilterSidebar filters={filters} onChange={patchFilters} onReset={() => setFilters(initialFilters)} />
-        <div className="grid gap-5">
-          <NearbyMapView center={{ lat: filters.lat, lng: filters.lng }} onUseLocation={useBrowserLocation} parkings={parkings} />
+          <FilterSidebar filters={filters} onChange={patchFilters} onReset={() => setSearchParams(buildSearchParams(initialDiscoveryFilters))} />
+          <div className="grid gap-5">
+            <NearbyMapView center={{ lat: filters.lat, lng: filters.lng }} onUseLocation={useBrowserLocation} parkings={parkings} />
 
           {error ? <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
           {isLoading ? <LoadingSkeleton /> : null}
@@ -177,7 +180,13 @@ export function SearchResultsPage() {
           {!isLoading && parkings.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
               {parkings.map((parking) => (
-                <ParkingResultCard bookingParams={getBookingParams(filters)} key={parking.id} parking={parking} />
+                <ParkingResultCard 
+                  bookingParams={getBookingParams(filters)} 
+                  key={parking.id} 
+                  parking={parking} 
+                  isAuthenticated={isAuthenticated}
+                  setAuthModalConfig={setAuthModalConfig}
+                />
               ))}
             </div>
           ) : null}
@@ -201,12 +210,25 @@ export function SearchResultsPage() {
   );
 }
 
-function ParkingResultCard({ bookingParams, parking }) {
+function ParkingResultCard({ bookingParams, parking, isAuthenticated, setAuthModalConfig }) {
   const detailSearch = new URLSearchParams(bookingParams).toString();
   const detailPath = detailSearch ? `/parkings/${parking.id}?${detailSearch}` : `/parkings/${parking.id}`;
+  const reservePath = buildDiscoveryReservePath(parking.id, bookingParams);
   const [isSaved, setIsSaved] = useState(() => isSavedParking(parking.id));
 
   function handleToggleSaved() {
+    if (!isAuthenticated) {
+      setAuthModalConfig({
+        isOpen: true,
+        title: 'Sign in to save parking',
+        pendingAction: () => {
+          toggleSavedParking(parking);
+          setIsSaved(true);
+        }
+      });
+      return;
+    }
+
     toggleSavedParking(parking);
     setIsSaved((current) => !current);
   }
@@ -258,9 +280,14 @@ function ParkingResultCard({ bookingParams, parking }) {
           </span>
         ))}
       </div>
-      <Link className="mt-5 inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100" to={detailPath}>
-        View details
-      </Link>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Link className="inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100" to={detailPath}>
+          View details
+        </Link>
+        <Link className="inline-flex rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={reservePath}>
+          Reserve preview
+        </Link>
+      </div>
       </div>
     </article>
   );
@@ -290,21 +317,6 @@ function LoadingSkeleton() {
   );
 }
 
-function toParams(filters) {
-  return Object.fromEntries(
-    Object.entries({
-      ...filters,
-      amenities: filters.amenities.join(',')
-    }).filter(([, value]) => {
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-
-      return value !== '' && value !== false && value !== null && value !== undefined;
-    })
-  );
-}
-
 function buildChips(filters) {
   return [
     filters.city,
@@ -320,4 +332,17 @@ function buildChips(filters) {
 
 function buildSearchLabel(filters) {
   return filters.search || [filters.area, filters.city, filters.state].filter(Boolean).join(', ') || 'Parking discovery';
+}
+
+function buildSearchParams(filters) {
+  return filtersToSearchParams(filters);
+}
+
+function buildDiscoveryReservePath(parkingId, bookingParams) {
+  const params = new URLSearchParams({
+    ...bookingParams,
+    intent: 'reserve'
+  });
+
+  return `/parkings/${parkingId}?${params.toString()}`;
 }

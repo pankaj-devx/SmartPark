@@ -143,10 +143,10 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="app-panel">
         <p className="text-sm font-medium uppercase text-brand-700">Owner control panel</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-950">Parking operations workspace</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Switch between overview, listings, reservations, occupancy, earnings, and account settings without the long-scroll dashboard feel.</p>
+        <h1 className="app-heading mt-2 text-3xl font-bold">Run each space like a small business</h1>
+        <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Monitor demand, update listings, resolve active reservations, and keep revenue visibility tight from one operational workspace.</p>
       </div>
 
       {error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -174,7 +174,7 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-        <Panel title="Listings health" subtitle="A clean operational snapshot instead of a long blended page.">
+        <Panel title="Listings health" subtitle="See approval status, pricing posture, and listing readiness without leaving overview.">
           {parkings.length === 0 ? (
             <EmptyState description="Create your first listing to start using the owner workspace." title="No listings yet" />
           ) : (
@@ -196,7 +196,7 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
           )}
         </Panel>
 
-        <Panel title="Operations summary" subtitle="Live booking and revenue signals for the spaces you manage.">
+        <Panel title="Operations summary" subtitle="The quickest read on demand, capacity, and revenue pressure across your inventory.">
           <div className="grid gap-3">
             <GuideTile label="Reservation load" text={`${ownerSummary?.bookingCounts?.confirmed ?? 0} confirmed, ${ownerSummary?.bookingCounts?.pending ?? 0} pending, and ${ownerSummary?.bookingCounts?.completed ?? 0} completed reservations are in the current workspace.`} />
             <GuideTile label="Best performing listing" text={topListing ? `${topListing.title} leads with Rs ${topListing.estimatedRevenue} from ${topListing.bookings} booking${topListing.bookings === 1 ? '' : 's'}.` : 'Your top earning listing will appear here as bookings accumulate.'} />
@@ -262,7 +262,7 @@ function OwnerListings({ editingParking, handleCreate, handleDelete, handleMedia
 
 function OwnerReservations({ bookingFilters, filteredOwnerBookings, handleCompleteBooking, isLoading, parkings, setBookingFilters }) {
   return (
-    <Panel title="Reservations" subtitle="Reservation monitoring in a dedicated operations section.">
+      <Panel title="Reservations" subtitle="Manage live parking demand with focused filters and completion actions.">
       <div className="mb-4 grid gap-3 lg:grid-cols-[180px_220px_minmax(0,1fr)]">
         <label className="grid gap-2 text-sm font-medium text-slate-700">
           Status
@@ -312,7 +312,7 @@ function OwnerOccupancy({ isLoading, occupancyCards, ownerSummary }) {
         <SummaryCard label="Currently available" value={ownerSummary?.availableSlotsNow ?? 0} />
         <SummaryCard label="Upcoming reservation load" value={ownerSummary?.upcomingReservations ?? 0} />
       </div>
-      <Panel title="Occupancy by listing" subtitle="This section separates utilization review from bookings and earnings.">
+      <Panel title="Occupancy by listing" subtitle="Spot strain, unused capacity, and uneven utilization before it turns into missed revenue.">
         {isLoading ? <SkeletonGrid /> : null}
         {!isLoading && occupancyCards.length === 0 ? <EmptyState description="Listing utilization appears here once you publish spaces." title="No occupancy data yet" /> : null}
         {!isLoading && occupancyCards.length > 0 ? (
@@ -341,13 +341,13 @@ function OwnerOccupancy({ isLoading, occupancyCards, ownerSummary }) {
 function OwnerEarnings({ ownerSummary, parkings }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <Panel title="Earnings" subtitle="Revenue cards and per-listing performance in one place.">
+      <Panel title="Earnings" subtitle="Track where revenue is coming from and which listings are carrying the business.">
         <div className="grid gap-4 md:grid-cols-2">
           <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary?.estimatedRevenue ?? 0}`} />
           <SummaryCard label="Revenue listings" value={ownerSummary?.perListingEarnings?.filter((item) => item.estimatedRevenue > 0).length ?? 0} />
         </div>
       </Panel>
-      <Panel title="Per-listing breakdown" subtitle="Use this to quickly identify your strongest spaces.">
+      <Panel title="Per-listing breakdown" subtitle="Compare listings side by side so pricing and availability decisions are easier to make.">
         {ownerSummary?.perListingEarnings?.length ? (
           <div className="grid gap-3">
             {ownerSummary.perListingEarnings.map((item) => (
@@ -373,9 +373,9 @@ function OwnerEarnings({ ownerSummary, parkings }) {
 
 function Panel({ children, subtitle, title }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+    <section className="app-panel">
+      <h2 className="app-heading text-xl font-semibold">{title}</h2>
+      <p className="app-copy mt-2 text-sm">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -383,10 +383,10 @@ function Panel({ children, subtitle, title }) {
 
 function SummaryCard({ label, value }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="app-stat">
       <BarChart3 className="mb-3 h-5 w-5 text-brand-600" aria-hidden="true" />
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
+      <p className="app-copy-soft text-sm">{label}</p>
+      <p className="app-heading mt-2 text-2xl font-bold">{value}</p>
     </div>
   );
 }

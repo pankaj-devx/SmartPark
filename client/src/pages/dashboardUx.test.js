@@ -35,6 +35,7 @@ test('workspace layout keeps responsive navigation affordances', () => {
   assert.ok(layoutSource.includes('overflow-x-auto'));
   assert.ok(layoutSource.includes('lg:hidden'));
   assert.ok(layoutSource.includes('PanelLeftClose'));
+  assert.ok(layoutSource.includes('toggleTheme'));
 });
 
 test('owner and admin dashboards include functional search surfaces', () => {
@@ -59,6 +60,7 @@ test('driver home exposes personalized premium widgets', () => {
   assert.ok(source.includes('Continue recent search'));
   assert.ok(source.includes('Recent activity'));
   assert.ok(source.includes('buildGreeting'));
+  assert.ok(source.includes('Explore live parking'));
 });
 
 test('driver home reuses account experience helpers instead of rebuilding storage', () => {
@@ -71,4 +73,31 @@ test('driver home reuses account experience helpers instead of rebuilding storag
   assert.ok(source.includes('getReminderPlaceholders'));
   assert.ok(source.includes('buildQuickRebookLink'));
   assert.ok(source.includes('fetchMyBookings'));
+});
+
+test('theme controls are available in the app shell and settings preferences', () => {
+  const layoutSource = readFileSync(join(currentDir, '../app/AppLayout.jsx'), 'utf8');
+  const settingsSource = readFileSync(join(currentDir, '../features/profile/AccountSettingsPanel.jsx'), 'utf8');
+  const themeProviderSource = readFileSync(join(currentDir, '../features/theme/ThemeProvider.jsx'), 'utf8');
+
+  assert.ok(layoutSource.includes('useTheme'));
+  assert.ok(layoutSource.includes('toggleTheme'));
+  assert.ok(layoutSource.includes('Dark mode'));
+  assert.ok(settingsSource.includes('Appearance'));
+  assert.ok(settingsSource.includes("setTheme('dark')"));
+  assert.ok(settingsSource.includes("setTheme('light')"));
+  assert.ok(settingsSource.includes("setTheme('system')"));
+  assert.ok(themeProviderSource.includes("localStorage.setItem('smartpark_theme', theme)"));
+});
+
+test('navigation labels are less repetitive and route to distinct driver destinations', () => {
+  const navigationSource = readFileSync(join(currentDir, '../app/navigation.js'), 'utf8');
+  const layoutSource = readFileSync(join(currentDir, '../app/AppLayout.jsx'), 'utf8');
+
+  assert.ok(navigationSource.includes("{ label: 'Home', to: '/dashboard'"));
+  assert.ok(navigationSource.includes("{ label: 'Discover', to: '/parkings'"));
+  assert.ok(navigationSource.includes("{ label: 'Reservations', to: '/bookings'"));
+  assert.ok(layoutSource.includes('Explore'));
+  assert.ok(layoutSource.includes('All spaces'));
+  assert.ok(layoutSource.includes('/register?role=owner'));
 });

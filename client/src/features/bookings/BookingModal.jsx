@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react';
 import { CalendarCheck, X } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { createBooking } from './bookingApi.js';
+import { getBookingSubmitPlan } from './bookingIntent.js';
 import { calculateEstimatedTotal, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
 
-export function BookingModal({ initialValues = {}, onClose, onSuccess, parking }) {
+export function BookingModal({ initialValues = {}, isAuthenticated = false, onClose, onRequireAuth, onSuccess, parking }) {
   const [form, setForm] = useState(() => ({
     bookingDate: initialValues.date ?? '',
     startTime: initialValues.startTime ?? '',
     endTime: initialValues.endTime ?? '',
-    vehicleType: parking.vehicleTypes?.[0] ?? '',
-    slotCount: 1
+    vehicleType: initialValues.vehicleType ?? parking.vehicleTypes?.[0] ?? '',
+    slotCount: initialValues.slotCount ?? 1
   }));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,6 +42,12 @@ export function BookingModal({ initialValues = {}, onClose, onSuccess, parking }
 
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    const submitPlan = getBookingSubmitPlan({ form, isAuthenticated });
+    if (submitPlan.kind === 'auth_required') {
+      onRequireAuth?.(submitPlan.draft);
       return;
     }
 
@@ -134,7 +141,7 @@ export function BookingModal({ initialValues = {}, onClose, onSuccess, parking }
               disabled={isSubmitting || parking.availableSlots < 1}
               type="submit"
             >
-              {isSubmitting ? 'Reserving...' : 'Confirm reservation'}
+              {isSubmitting ? 'Reserving...' : isAuthenticated ? 'Confirm reservation' : 'Continue to sign in'}
             </button>
           </form>
         )}

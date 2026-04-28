@@ -12,11 +12,11 @@ import {
 } from 'lucide-react';
 
 export const driverNavItems = [
-  { label: 'Find Parking', to: '/parkings', icon: MapPinned },
-  { label: 'My Bookings', to: '/bookings', icon: ClipboardList },
-  { label: 'Saved Parkings', to: '/saved', icon: Bookmark },
-  { label: 'Notifications', to: '/notifications', icon: Bell },
-  { label: 'Profile', to: '/profile', icon: CircleUserRound }
+  { label: 'Home', to: '/dashboard', icon: LayoutDashboard },
+  { label: 'Discover', to: '/parkings', icon: MapPinned },
+  { label: 'Reservations', to: '/bookings', icon: ClipboardList },
+  { label: 'Saved', to: '/saved', icon: Bookmark },
+  { label: 'Account', to: '/settings', icon: CircleUserRound }
 ];
 
 export const ownerNavItems = [

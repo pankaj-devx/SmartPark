@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { getDefaultRouteForRole } from '../../app/navigation.js';
@@ -9,13 +9,15 @@ import { useAuth } from './useAuth.js';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedRole = searchParams.get('role') === 'owner' ? 'owner' : 'driver';
   const { isAuthenticated, login, user } = useAuth();
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
-    role: 'driver',
+    role: requestedRole,
     phone: ''
   });
 
@@ -55,8 +57,8 @@ export function RegisterPage() {
         </p>
       }
       onSubmit={handleSubmit}
-      submitLabel="Create account"
-      title="Create your SmartPark account"
+      submitLabel={requestedRole === 'owner' ? 'Start owner account' : 'Create account'}
+      title={requestedRole === 'owner' ? 'List your parking space on SmartPark' : 'Create your SmartPark account'}
     >
       <FormField autoComplete="name" label="Full name" name="name" onChange={updateField} required value={form.name} />
       <FormField autoComplete="email" label="Email" name="email" onChange={updateField} required type="email" value={form.email} />

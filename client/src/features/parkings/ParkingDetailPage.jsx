@@ -4,6 +4,7 @@ import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, MapPin, ShieldCheck 
 import { BookingModal } from '../bookings/BookingModal.jsx';
 import { isSavedParking, recordRecentlyViewedParking, toggleSavedParking } from '../account/accountExperience.js';
 import { useAuth } from '../auth/useAuth.js';
+import { AuthModal } from '../auth/AuthModal.jsx';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from './parkingApi.js';
 
@@ -14,8 +15,10 @@ export function ParkingDetailPage() {
   const [parking, setParking] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [isBookingOpen, setIsBookingOpen] = useState(() => searchParams.get('intent') === 'reserve');
   const [isSaved, setIsSaved] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState(null);
+  const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
 
   useEffect(() => {
     async function loadParking() {
@@ -36,7 +39,6 @@ export function ParkingDetailPage() {
 
     loadParking();
   }, [id]);
-
   function handleBookingSuccess(booking) {
     setParking((current) =>
       current
@@ -53,8 +55,40 @@ export function ParkingDetailPage() {
       return;
     }
 
+    if (!isAuthenticated) {
+      setAuthModalConfig({
+        isOpen: true,
+        title: 'Sign in to save parking',
+        pendingAction: () => {
+          toggleSavedParking(parking);
+          setIsSaved(true);
+        }
+      });
+      return;
+    }
+
     toggleSavedParking(parking);
     setIsSaved((current) => !current);
+  }
+
+  function handleReserveClick() {
+    setIsBookingOpen(true);
+  }
+
+  function handleAuthSuccess() {
+    if (authModalConfig.pendingAction) {
+      authModalConfig.pendingAction();
+    }
+  }
+
+  function handleRequireAuth(draft) {
+    setBookingDraft(draft);
+    setIsBookingOpen(false);
+    setAuthModalConfig({
+      isOpen: true,
+      title: 'Sign in to complete your reservation',
+      pendingAction: () => setIsBookingOpen(true)
+    });
   }
 
   return (
@@ -122,33 +156,38 @@ export function ParkingDetailPage() {
                 {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
                 {isSaved ? 'Saved to favorites' : 'Save parking'}
               </button>
-              {isAuthenticated ? (
-                <button
-                  className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
-                  disabled={parking.availableSlots < 1}
-                  onClick={() => setIsBookingOpen(true)}
-                  type="button"
-                >
-                  Reserve slot
-                </button>
-              ) : (
-                <Link className="mt-5 block rounded-md bg-brand-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-brand-700" to="/login">
-                  Sign in to reserve
-                </Link>
-              )}
+              <button
+                className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={parking.availableSlots < 1}
+                onClick={handleReserveClick}
+                type="button"
+              >
+                Reserve slot
+              </button>
             </aside>
           </div>
         </article>
       ) : null}
 
+      <AuthModal 
+        isOpen={authModalConfig.isOpen} 
+        onClose={() => setAuthModalConfig({ isOpen: false, pendingAction: null, title: '' })} 
+        onSuccess={handleAuthSuccess}
+        title={authModalConfig.title}
+      />
+
       {parking && isBookingOpen ? (
         <BookingModal
           initialValues={{
-            date: searchParams.get('date') ?? '',
-            startTime: searchParams.get('startTime') ?? '',
-            endTime: searchParams.get('endTime') ?? ''
+            date: bookingDraft?.bookingDate ?? searchParams.get('date') ?? '',
+            startTime: bookingDraft?.startTime ?? searchParams.get('startTime') ?? '',
+            endTime: bookingDraft?.endTime ?? searchParams.get('endTime') ?? '',
+            vehicleType: bookingDraft?.vehicleType ?? '',
+            slotCount: bookingDraft?.slotCount ?? 1
           }}
+          isAuthenticated={isAuthenticated}
           onClose={() => setIsBookingOpen(false)}
+          onRequireAuth={handleRequireAuth}
           onSuccess={handleBookingSuccess}
           parking={parking}
         />
