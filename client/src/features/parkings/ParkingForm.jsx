@@ -2,12 +2,15 @@ import { useState } from 'react';
 
 const vehicleOptions = ['2-wheeler', '4-wheeler'];
 const amenityOptions = ['covered', 'cctv', 'ev charging', 'security', 'valet', 'accessible'];
+const parkingTypeOptions = ['open', 'covered', 'basement', 'garage', 'street', 'lot'];
 
 const emptyForm = {
   title: '',
   description: '',
   address: '',
   city: '',
+  district: '',
+  area: '',
   state: '',
   pincode: '',
   lat: '',
@@ -15,16 +18,21 @@ const emptyForm = {
   totalSlots: '',
   hourlyPrice: '',
   vehicleTypes: ['4-wheeler'],
-  amenities: []
+  amenities: [],
+  parkingType: 'lot',
+  isOpen24x7: true,
+  operatingOpen: '00:00',
+  operatingClose: '23:59'
 };
 
 export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitLabel }) {
   const [form, setForm] = useState(() => toFormState(initialParking));
 
   function updateField(event) {
+    const { checked, name, type, value } = event.target;
     setForm((current) => ({
       ...current,
-      [event.target.name]: event.target.value
+      [name]: type === 'checkbox' ? checked : value
     }));
   }
 
@@ -65,8 +73,23 @@ export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitL
 
       <div className="grid gap-4 md:grid-cols-3">
         <Field label="City" name="city" onChange={updateField} required value={form.city} />
+        <Field label="District" name="district" onChange={updateField} value={form.district} />
+        <Field label="Area" name="area" onChange={updateField} value={form.area} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
         <Field label="State" name="state" onChange={updateField} required value={form.state} />
         <Field label="Pincode" name="pincode" onChange={updateField} required value={form.pincode} />
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Parking type
+          <select className="rounded-md border border-slate-300 px-3 py-2" name="parkingType" onChange={updateField} value={form.parkingType}>
+            {parkingTypeOptions.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -77,6 +100,15 @@ export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitL
 
       <CheckboxGroup label="Vehicle types" options={vehicleOptions} selected={form.vehicleTypes} onToggle={(value) => toggleArrayField('vehicleTypes', value)} />
       <CheckboxGroup label="Amenities" options={amenityOptions} selected={form.amenities} onToggle={(value) => toggleArrayField('amenities', value)} />
+
+      <div className="grid gap-4 md:grid-cols-[180px_1fr_1fr]">
+        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input checked={form.isOpen24x7} name="isOpen24x7" onChange={updateField} type="checkbox" />
+          Open 24x7
+        </label>
+        <Field disabled={form.isOpen24x7} label="Opens" name="operatingOpen" onChange={updateField} type="time" value={form.operatingOpen} />
+        <Field disabled={form.isOpen24x7} label="Closes" name="operatingClose" onChange={updateField} type="time" value={form.operatingClose} />
+      </div>
 
       <div className="flex flex-wrap gap-3">
         <button className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" type="submit">
@@ -130,6 +162,8 @@ function toFormState(parking) {
     description: parking.description,
     address: parking.address,
     city: parking.city,
+    district: parking.district ?? '',
+    area: parking.area ?? '',
     state: parking.state,
     pincode: parking.pincode,
     lat: parking.coordinates.lat,
@@ -137,7 +171,11 @@ function toFormState(parking) {
     totalSlots: parking.totalSlots,
     hourlyPrice: parking.hourlyPrice,
     vehicleTypes: parking.vehicleTypes,
-    amenities: parking.amenities
+    amenities: parking.amenities,
+    parkingType: parking.parkingType ?? 'lot',
+    isOpen24x7: parking.isOpen24x7 ?? true,
+    operatingOpen: parking.operatingHours?.open ?? '00:00',
+    operatingClose: parking.operatingHours?.close ?? '23:59'
   };
 }
 
@@ -147,6 +185,8 @@ function toPayload(form) {
     description: form.description,
     address: form.address,
     city: form.city,
+    district: form.district,
+    area: form.area,
     state: form.state,
     pincode: form.pincode,
     coordinates: {
@@ -156,7 +196,12 @@ function toPayload(form) {
     totalSlots: Number(form.totalSlots),
     hourlyPrice: Number(form.hourlyPrice),
     vehicleTypes: form.vehicleTypes,
-    amenities: form.amenities
+    amenities: form.amenities,
+    parkingType: form.parkingType,
+    isOpen24x7: form.isOpen24x7,
+    operatingHours: {
+      open: form.isOpen24x7 ? '00:00' : form.operatingOpen,
+      close: form.isOpen24x7 ? '23:59' : form.operatingClose
+    }
   };
 }
-

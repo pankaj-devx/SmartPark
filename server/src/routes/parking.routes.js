@@ -4,6 +4,7 @@ import {
   createParkingListing,
   deleteParkingListing,
   getMyParkingListings,
+  getNearbyParkingListings,
   getParkingListing,
   getPublicParkingListings,
   rejectParkingListing,
@@ -17,6 +18,7 @@ import { validateRequest } from '../middleware/validateRequest.js';
 import {
   createParkingSchema,
   listParkingQuerySchema,
+  nearbyParkingQuerySchema,
   rejectParkingSchema,
   updateParkingSchema
 } from '../validators/parking.validator.js';
@@ -24,6 +26,12 @@ import {
 export const parkingRoutes = Router();
 
 parkingRoutes.get('/', requireDatabase, validateRequest(listParkingQuerySchema, 'query'), getPublicParkingListings);
+parkingRoutes.get(
+  '/nearby',
+  requireDatabase,
+  validateRequest(nearbyParkingQuerySchema, 'query'),
+  getNearbyParkingListings
+);
 parkingRoutes.post(
   '/',
   requireDatabase,

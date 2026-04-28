@@ -9,6 +9,8 @@ export function serializeParking(parking) {
     description: parking.description,
     address: parking.address,
     city: parking.city,
+    district: parking.district ?? '',
+    area: parking.area ?? '',
     state: parking.state,
     pincode: parking.pincode,
     coordinates: {
@@ -20,6 +22,12 @@ export function serializeParking(parking) {
     vehicleTypes: parking.vehicleTypes,
     hourlyPrice: parking.hourlyPrice,
     amenities: parking.amenities,
+    parkingType: parking.parkingType ?? 'lot',
+    isOpen24x7: parking.isOpen24x7 ?? true,
+    operatingHours: parking.operatingHours ?? { open: '00:00', close: '23:59' },
+    popularityScore: parking.popularityScore ?? 0,
+    distance: parking.distance,
+    rankingScore: parking.rankingScore,
     owner: parking.owner?._id?.toString?.() ?? parking.owner?.toString?.(),
     verificationStatus: parking.verificationStatus,
     rejectionReason: parking.rejectionReason,
@@ -35,6 +43,8 @@ export function buildParkingCreatePayload(input, ownerId) {
     description: input.description,
     address: input.address,
     city: input.city,
+    district: input.district ?? '',
+    area: input.area ?? '',
     state: input.state,
     pincode: input.pincode,
     location: {
@@ -46,6 +56,10 @@ export function buildParkingCreatePayload(input, ownerId) {
     vehicleTypes: input.vehicleTypes,
     hourlyPrice: input.hourlyPrice,
     amenities: input.amenities ?? [],
+    parkingType: input.parkingType ?? 'lot',
+    isOpen24x7: input.isOpen24x7 ?? true,
+    operatingHours: input.operatingHours ?? { open: '00:00', close: '23:59' },
+    popularityScore: 0,
     owner: ownerId,
     verificationStatus: 'pending',
     isActive: true
@@ -58,8 +72,10 @@ export function buildPublicParkingFilter(query) {
     isActive: true
   };
 
-  if (query.search) {
-    filter.$text = { $search: query.search };
+  const keyword = query.search ?? query.q;
+
+  if (keyword) {
+    filter.$text = { $search: keyword };
   }
 
   if (query.city) {
@@ -70,8 +86,24 @@ export function buildPublicParkingFilter(query) {
     filter.state = new RegExp(`^${escapeRegExp(query.state)}$`, 'i');
   }
 
+  if (query.district) {
+    filter.district = new RegExp(`^${escapeRegExp(query.district)}$`, 'i');
+  }
+
+  if (query.area) {
+    filter.area = new RegExp(`^${escapeRegExp(query.area)}$`, 'i');
+  }
+
   if (query.vehicleType) {
     filter.vehicleTypes = query.vehicleType;
+  }
+
+  if (query.amenities?.length) {
+    filter.amenities = { $all: query.amenities };
+  }
+
+  if (query.parkingType) {
+    filter.parkingType = query.parkingType;
   }
 
   if (query.minPrice || query.maxPrice) {
@@ -86,6 +118,25 @@ export function buildPublicParkingFilter(query) {
     }
   }
 
+  if (query.availableOnly) {
+    filter.availableSlots = { ...(filter.availableSlots ?? {}), $gt: 0 };
+  }
+
+  if (query.isOpen24x7 !== undefined) {
+    filter.isOpen24x7 = query.isOpen24x7;
+  }
+
+  if (query.openNow) {
+    const currentTime = getCurrentTime(query.now);
+    filter.$or = [
+      { isOpen24x7: true },
+      {
+        'operatingHours.open': { $lte: currentTime },
+        'operatingHours.close': { $gte: currentTime }
+      }
+    ];
+  }
+
   return filter;
 }
 
@@ -93,7 +144,11 @@ export function buildParkingSort(sort) {
   const sortMap = {
     newest: { createdAt: -1 },
     price_asc: { hourlyPrice: 1 },
-    price_desc: { hourlyPrice: -1 }
+    price_desc: { hourlyPrice: -1 },
+    cheapest: { hourlyPrice: 1 },
+    highest_availability: { availableSlots: -1 },
+    relevance: { createdAt: -1 },
+    nearest: { createdAt: -1 }
   };
 
   return sortMap[sort] ?? sortMap.newest;
@@ -122,9 +177,55 @@ export async function listPublicParkings(query, deps = {}) {
     ParkingModel.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     ParkingModel.countDocuments(filter)
   ]);
+  const rankedParkings = applyRanking(parkings, query);
 
   return {
-    parkings: parkings.map(serializeParking),
+    parkings: rankedParkings.map(serializeParking),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  };
+}
+
+export async function listNearbyParkings(query, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const page = query.page;
+  const limit = query.limit;
+  const skip = (page - 1) * limit;
+  const radiusMeters = query.radiusKm ? query.radiusKm * 1000 : query.radius;
+  const filter = buildPublicParkingFilter({ ...query, lat: undefined, lng: undefined, radius: undefined, radiusKm: undefined });
+
+  const pipeline = [
+    {
+      $geoNear: {
+        near: {
+          type: 'Point',
+          coordinates: [query.lng, query.lat]
+        },
+        distanceField: 'distance',
+        maxDistance: radiusMeters,
+        spherical: true,
+        query: filter
+      }
+    },
+    {
+      $facet: {
+        parkings: [{ $skip: skip }, { $limit: limit }],
+        metadata: [{ $count: 'total' }]
+      }
+    }
+  ];
+
+  const [result] = await ParkingModel.aggregate(pipeline);
+  const parkings = result?.parkings ?? [];
+  const total = result?.metadata?.[0]?.total ?? 0;
+  const rankedParkings = applyRanking(parkings, { ...query, sort: query.sort ?? 'nearest' });
+
+  return {
+    parkings: rankedParkings.map(serializeParking),
     pagination: {
       page,
       limit,
@@ -236,6 +337,8 @@ function applyParkingUpdates(parking, input) {
     'description',
     'address',
     'city',
+    'district',
+    'area',
     'state',
     'pincode',
     'totalSlots',
@@ -243,6 +346,9 @@ function applyParkingUpdates(parking, input) {
     'vehicleTypes',
     'hourlyPrice',
     'amenities',
+    'parkingType',
+    'isOpen24x7',
+    'operatingHours',
     'isActive'
   ];
 
@@ -264,3 +370,45 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function applyRanking(parkings, query = {}) {
+  const scoredParkings = parkings.map((parking) => ({
+    ...parking,
+    rankingScore: calculateRankingScore(parking)
+  }));
+
+  if (query.sort === 'nearest') {
+    return scoredParkings.sort((a, b) => (a.distance ?? Number.MAX_SAFE_INTEGER) - (b.distance ?? Number.MAX_SAFE_INTEGER));
+  }
+
+  if (query.sort === 'cheapest' || query.sort === 'price_asc') {
+    return scoredParkings.sort((a, b) => a.hourlyPrice - b.hourlyPrice || b.rankingScore - a.rankingScore);
+  }
+
+  if (query.sort === 'highest_availability') {
+    return scoredParkings.sort((a, b) => b.availableSlots - a.availableSlots || b.rankingScore - a.rankingScore);
+  }
+
+  if (query.sort === 'relevance') {
+    return scoredParkings.sort((a, b) => b.rankingScore - a.rankingScore);
+  }
+
+  return scoredParkings;
+}
+
+function calculateRankingScore(parking) {
+  const distanceScore = parking.distance === undefined ? 0 : Math.max(0, 1 - parking.distance / 10000) * 35;
+  const priceScore = Math.max(0, 1 - parking.hourlyPrice / 500) * 25;
+  const availabilityRatio = parking.totalSlots ? parking.availableSlots / parking.totalSlots : 0;
+  const availabilityScore = availabilityRatio * 25;
+  const popularityScore = Math.min(parking.popularityScore ?? 0, 100) * 0.15;
+
+  return Number((distanceScore + priceScore + availabilityScore + popularityScore).toFixed(2));
+}
+
+function getCurrentTime(now = new Date()) {
+  const date = now instanceof Date ? now : new Date(now);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${hours}:${minutes}`;
+}

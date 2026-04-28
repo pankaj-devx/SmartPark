@@ -5,6 +5,21 @@ export async function fetchPublicParkings(params = {}) {
   return response.data.data;
 }
 
+export async function fetchNearbyParkings(params = {}) {
+  const response = await apiClient.get('/parkings/nearby', { params });
+  return response.data.data;
+}
+
+export async function fetchParkingById(id) {
+  const response = await apiClient.get(`/parkings/${id}`);
+  return response.data.data.parking;
+}
+
+export async function fetchSearchSuggestions(q) {
+  const response = await apiClient.get('/search/suggestions', { params: { q } });
+  return response.data.data.suggestions;
+}
+
 export async function fetchMyParkings() {
   const response = await apiClient.get('/parkings/mine');
   return response.data.data.parkings;
@@ -24,4 +39,3 @@ export async function deleteParking(id) {
   const response = await apiClient.delete(`/parkings/${id}`);
   return response.data.data.parking;
 }
-

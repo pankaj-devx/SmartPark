@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   approveParking,
   buildParkingCreatePayload,
+  buildParkingSort,
   buildPublicParkingFilter,
   createParking,
+  listNearbyParkings,
   listPublicParkings,
   updateParking
 } from './parking.service.js';
@@ -58,6 +60,9 @@ test('buildPublicParkingFilter exposes only approved and active listings', () =>
     search: 'station',
     city: 'Pune',
     vehicleType: '4-wheeler',
+    amenities: ['covered', 'cctv'],
+    availableOnly: true,
+    parkingType: 'covered',
     minPrice: 20,
     maxPrice: 100
   });
@@ -66,7 +71,34 @@ test('buildPublicParkingFilter exposes only approved and active listings', () =>
   assert.equal(filter.isActive, true);
   assert.deepEqual(filter.$text, { $search: 'station' });
   assert.equal(filter.vehicleTypes, '4-wheeler');
+  assert.deepEqual(filter.amenities, { $all: ['covered', 'cctv'] });
+  assert.deepEqual(filter.availableSlots, { $gt: 0 });
+  assert.equal(filter.parkingType, 'covered');
   assert.deepEqual(filter.hourlyPrice, { $gte: 20, $lte: 100 });
+});
+
+test('buildPublicParkingFilter composes location and open-now filters', () => {
+  const filter = buildPublicParkingFilter({
+    q: 'central',
+    state: 'Maharashtra',
+    district: 'Pune',
+    area: 'Camp',
+    openNow: true,
+    now: new Date('2026-04-27T10:30:00')
+  });
+
+  assert.deepEqual(filter.$text, { $search: 'central' });
+  assert.match(filter.state.source, /Maharashtra/);
+  assert.match(filter.district.source, /Pune/);
+  assert.match(filter.area.source, /Camp/);
+  assert.equal(filter.$or[0].isOpen24x7, true);
+  assert.deepEqual(filter.$or[1]['operatingHours.open'], { $lte: '10:30' });
+  assert.deepEqual(filter.$or[1]['operatingHours.close'], { $gte: '10:30' });
+});
+
+test('buildParkingSort supports discovery sorting modes', () => {
+  assert.deepEqual(buildParkingSort('cheapest'), { hourlyPrice: 1 });
+  assert.deepEqual(buildParkingSort('highest_availability'), { availableSlots: -1 });
 });
 
 test('public list returns only approved listing query results', async () => {
@@ -99,6 +131,47 @@ test('public list returns only approved listing query results', async () => {
   assert.equal(receivedFilter.verificationStatus, 'approved');
   assert.equal(receivedFilter.isActive, true);
   assert.equal(result.parkings.length, 1);
+  assert.equal(result.pagination.total, 1);
+});
+
+test('nearby search uses geoNear, returns distance, and keeps approved visibility', async () => {
+  let receivedPipeline;
+
+  const ParkingModel = {
+    async aggregate(pipeline) {
+      receivedPipeline = pipeline;
+      return [
+        {
+          parkings: [
+            makeParking({
+              ...buildParkingCreatePayload(validInput, ownerId),
+              verificationStatus: 'approved',
+              distance: 120
+            })
+          ],
+          metadata: [{ total: 1 }]
+        }
+      ];
+    }
+  };
+
+  const result = await listNearbyParkings(
+    {
+      lat: 18.5204,
+      lng: 73.8567,
+      radius: 1000,
+      page: 1,
+      limit: 10,
+      sort: 'nearest'
+    },
+    { ParkingModel }
+  );
+
+  assert.equal(receivedPipeline[0].$geoNear.distanceField, 'distance');
+  assert.deepEqual(receivedPipeline[0].$geoNear.near.coordinates, [73.8567, 18.5204]);
+  assert.equal(receivedPipeline[0].$geoNear.query.verificationStatus, 'approved');
+  assert.equal(receivedPipeline[0].$geoNear.query.isActive, true);
+  assert.equal(result.parkings[0].distance, 120);
   assert.equal(result.pagination.total, 1);
 });
 
@@ -164,6 +237,8 @@ function makeParking(overrides = {}) {
     description: overrides.description,
     address: overrides.address,
     city: overrides.city,
+    district: overrides.district ?? '',
+    area: overrides.area ?? '',
     state: overrides.state,
     pincode: overrides.pincode,
     location: overrides.location,
@@ -172,6 +247,12 @@ function makeParking(overrides = {}) {
     vehicleTypes: overrides.vehicleTypes,
     hourlyPrice: overrides.hourlyPrice,
     amenities: overrides.amenities,
+    parkingType: overrides.parkingType ?? 'lot',
+    isOpen24x7: overrides.isOpen24x7 ?? true,
+    operatingHours: overrides.operatingHours ?? { open: '00:00', close: '23:59' },
+    popularityScore: overrides.popularityScore ?? 0,
+    distance: overrides.distance,
+    rankingScore: overrides.rankingScore,
     owner: {
       toString: () => overrides.owner
     },
@@ -185,4 +266,3 @@ function makeParking(overrides = {}) {
     }
   };
 }
-

@@ -3,6 +3,7 @@ import {
   approveParking,
   createParking,
   getParkingDetail,
+  listNearbyParkings,
   listOwnerParkings,
   listPublicParkings,
   rejectParking,
@@ -23,6 +24,15 @@ export const createParkingListing = asyncHandler(async (req, res) => {
 
 export const getPublicParkingListings = asyncHandler(async (req, res) => {
   const data = await listPublicParkings(req.validatedQuery);
+
+  res.status(200).json({
+    success: true,
+    data
+  });
+});
+
+export const getNearbyParkingListings = asyncHandler(async (req, res) => {
+  const data = await listNearbyParkings(req.validatedQuery);
 
   res.status(200).json({
     success: true,

@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { parkingRoutes } from './routes/parking.routes.js';
+import { searchRoutes } from './routes/search.routes.js';
 
 export const app = express();
 
@@ -31,6 +32,7 @@ app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/parkings', parkingRoutes);
+app.use('/api/search', searchRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

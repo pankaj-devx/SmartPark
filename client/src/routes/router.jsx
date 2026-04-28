@@ -3,7 +3,8 @@ import { AppLayout } from '../app/AppLayout.jsx';
 import { LoginPage } from '../features/auth/LoginPage.jsx';
 import { RegisterPage } from '../features/auth/RegisterPage.jsx';
 import { OwnerParkingDashboard } from '../features/parkings/OwnerParkingDashboard.jsx';
-import { ParkingListPage } from '../features/parkings/ParkingListPage.jsx';
+import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
+import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
 import { DashboardPage } from '../pages/DashboardPage.jsx';
 import { HomePage } from '../pages/HomePage.jsx';
 import { NotFoundPage } from '../pages/NotFoundPage.jsx';
@@ -15,7 +16,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: 'parkings', element: <ParkingListPage /> },
+      { path: 'parkings', element: <SearchResultsPage /> },
+      { path: 'parkings/:id', element: <ParkingDetailPage /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       {

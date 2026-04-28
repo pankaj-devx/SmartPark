@@ -28,6 +28,18 @@ const parkingSchema = new mongoose.Schema(
       trim: true,
       index: true
     },
+    district: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true
+    },
+    area: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true
+    },
     state: {
       type: String,
       required: true,
@@ -90,6 +102,32 @@ const parkingSchema = new mongoose.Schema(
       enum: ['covered', 'cctv', 'ev charging', 'security', 'valet', 'accessible'],
       default: []
     },
+    parkingType: {
+      type: String,
+      enum: ['open', 'covered', 'basement', 'garage', 'street', 'lot'],
+      default: 'lot',
+      index: true
+    },
+    isOpen24x7: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    operatingHours: {
+      open: {
+        type: String,
+        default: '00:00'
+      },
+      close: {
+        type: String,
+        default: '23:59'
+      }
+    },
+    popularityScore: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -120,6 +158,16 @@ const parkingSchema = new mongoose.Schema(
 
 parkingSchema.index({ location: '2dsphere' });
 parkingSchema.index({ verificationStatus: 1, isActive: 1, city: 1 });
+parkingSchema.index({
+  verificationStatus: 1,
+  isActive: 1,
+  state: 1,
+  district: 1,
+  city: 1,
+  parkingType: 1,
+  hourlyPrice: 1,
+  availableSlots: -1
+});
 parkingSchema.index({ owner: 1, createdAt: -1 });
 parkingSchema.index({ title: 'text', description: 'text', address: 'text', city: 'text' });
 
