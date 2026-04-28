@@ -16,3 +16,14 @@ test('bookings page route is protected by authentication', () => {
   assert.ok(protectedRouteIndex > bookingsRouteIndex);
   assert.ok(myBookingsIndex > protectedRouteIndex);
 });
+
+test('owner dashboard route is restricted to owner and admin roles', () => {
+  const routerSource = readFileSync(join(currentDir, 'router.jsx'), 'utf8');
+  const ownerRouteIndex = routerSource.indexOf("path: 'owner/parkings'");
+  const protectedRouteIndex = routerSource.indexOf("<ProtectedRoute roles={['owner', 'admin']}>", ownerRouteIndex);
+  const ownerDashboardIndex = routerSource.indexOf('<OwnerParkingDashboard />', protectedRouteIndex);
+
+  assert.ok(ownerRouteIndex > -1);
+  assert.ok(protectedRouteIndex > ownerRouteIndex);
+  assert.ok(ownerDashboardIndex > protectedRouteIndex);
+});

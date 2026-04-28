@@ -9,6 +9,7 @@ import { adminRoutes } from './routes/admin.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { bookingRoutes } from './routes/booking.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
+import { ownerRoutes } from './routes/owner.routes.js';
 import { parkingRoutes } from './routes/parking.routes.js';
 import { searchRoutes } from './routes/search.routes.js';
 
@@ -35,6 +36,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/owner', ownerRoutes);
 app.use('/api/parkings', parkingRoutes);
 app.use('/api/search', searchRoutes);
 
