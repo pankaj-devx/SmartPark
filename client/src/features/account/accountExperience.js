@@ -1,3 +1,5 @@
+import { getExperienceScope, getScopedStorageKey } from './experienceScope.js';
+
 const STORAGE_KEYS = {
   savedParkings: 'smartpark_saved_parkings',
   recentlyViewed: 'smartpark_recently_viewed',
@@ -172,12 +174,15 @@ function limitList(items, limit) {
 }
 
 function readList(key) {
-  if (typeof localStorage === 'undefined') {
+  const scope = getExperienceScope();
+  const storage = scope.storage;
+
+  if (!storage) {
     return [];
   }
 
   try {
-    const raw = localStorage.getItem(key);
+    const raw = storage.getItem(getScopedStorageKey(key, scope));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -185,20 +190,26 @@ function readList(key) {
 }
 
 function writeList(key, value) {
-  if (typeof localStorage === 'undefined') {
+  const scope = getExperienceScope();
+  const storage = scope.storage;
+
+  if (!storage) {
     return;
   }
 
-  localStorage.setItem(key, JSON.stringify(value));
+  storage.setItem(getScopedStorageKey(key, scope), JSON.stringify(value));
 }
 
 function readObject(key) {
-  if (typeof localStorage === 'undefined') {
+  const scope = getExperienceScope();
+  const storage = scope.storage;
+
+  if (!storage) {
     return {};
   }
 
   try {
-    const raw = localStorage.getItem(key);
+    const raw = storage.getItem(getScopedStorageKey(key, scope));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -206,9 +217,12 @@ function readObject(key) {
 }
 
 function writeObject(key, value) {
-  if (typeof localStorage === 'undefined') {
+  const scope = getExperienceScope();
+  const storage = scope.storage;
+
+  if (!storage) {
     return;
   }
 
-  localStorage.setItem(key, JSON.stringify(value));
+  storage.setItem(getScopedStorageKey(key, scope), JSON.stringify(value));
 }

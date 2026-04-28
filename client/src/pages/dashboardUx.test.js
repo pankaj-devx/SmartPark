@@ -90,6 +90,32 @@ test('theme controls are available in the app shell and settings preferences', (
   assert.ok(themeProviderSource.includes("localStorage.setItem('smartpark_theme', theme)"));
 });
 
+test('shared design tokens harden dark-mode contrast for surfaces and text', () => {
+  const stylesSource = readFileSync(join(currentDir, '../styles/index.css'), 'utf8');
+
+  assert.ok(stylesSource.includes("--app-text: #f2f7ff"));
+  assert.ok(stylesSource.includes("--app-text-muted: #d8e2f0"));
+  assert.ok(stylesSource.includes("--app-text-soft: #afbdd1"));
+  assert.ok(stylesSource.includes('--app-surface-subtle'));
+  assert.ok(stylesSource.includes('.app-link'));
+  assert.ok(stylesSource.includes('.app-modal'));
+  assert.ok(stylesSource.includes('.app-divider'));
+});
+
+test('public booking and auth surfaces use shared theme-aware styles', () => {
+  const searchSource = readFileSync(join(currentDir, '../features/parkings/SearchResultsPage.jsx'), 'utf8');
+  const detailSource = readFileSync(join(currentDir, '../features/parkings/ParkingDetailPage.jsx'), 'utf8');
+  const bookingSource = readFileSync(join(currentDir, '../features/bookings/BookingModal.jsx'), 'utf8');
+  const authSource = readFileSync(join(currentDir, '../features/auth/AuthModal.jsx'), 'utf8');
+
+  assert.ok(searchSource.includes('app-input'));
+  assert.ok(searchSource.includes('app-pill'));
+  assert.ok(detailSource.includes('app-card-muted'));
+  assert.ok(bookingSource.includes('app-modal'));
+  assert.ok(bookingSource.includes('app-card-muted'));
+  assert.ok(authSource.includes('app-modal'));
+});
+
 test('navigation labels are less repetitive and route to distinct driver destinations', () => {
   const navigationSource = readFileSync(join(currentDir, '../app/navigation.js'), 'utf8');
   const layoutSource = readFileSync(join(currentDir, '../app/AppLayout.jsx'), 'utf8');

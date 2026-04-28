@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
 import { BookingModal } from '../bookings/BookingModal.jsx';
 import { isSavedParking, recordRecentlyViewedParking, toggleSavedParking } from '../account/accountExperience.js';
+import { clearGuestBookingIntent, getGuestBookingIntent, saveGuestBookingIntent } from '../account/guestSession.js';
 import { useAuth } from '../auth/useAuth.js';
 import { AuthModal } from '../auth/AuthModal.jsx';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
@@ -17,7 +18,7 @@ export function ParkingDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isBookingOpen, setIsBookingOpen] = useState(() => searchParams.get('intent') === 'reserve');
   const [isSaved, setIsSaved] = useState(false);
-  const [bookingDraft, setBookingDraft] = useState(null);
+  const [bookingDraft, setBookingDraft] = useState(() => getGuestBookingIntent(id));
   const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export function ParkingDetailPage() {
     loadParking();
   }, [id]);
   function handleBookingSuccess(booking) {
+    clearGuestBookingIntent(id);
     setParking((current) =>
       current
         ? {
@@ -82,6 +84,10 @@ export function ParkingDetailPage() {
   }
 
   function handleRequireAuth(draft) {
+    saveGuestBookingIntent({
+      ...draft,
+      parkingId: id
+    });
     setBookingDraft(draft);
     setIsBookingOpen(false);
     setAuthModalConfig({
@@ -93,17 +99,17 @@ export function ParkingDetailPage() {
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-8">
-      <Link className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-950" to="/parkings">
+      <Link className="app-link mb-5 inline-flex items-center gap-2 text-sm font-semibold" to="/parkings">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to results
       </Link>
 
-      {isLoading ? <div className="h-72 animate-pulse rounded-lg bg-slate-200" /> : null}
+      {isLoading ? <div className="h-72 animate-pulse rounded-lg" style={{ background: 'var(--app-surface-subtle)' }} /> : null}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
       {parking ? (
-        <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="relative grid min-h-64 place-items-center bg-slate-100 px-6 text-center">
+        <article className="app-panel overflow-hidden p-0">
+          <div className="relative grid min-h-64 place-items-center px-6 text-center" style={{ background: 'var(--app-surface-muted)' }}>
             {parking.coverImage ? (
               <img alt={parking.coverImage.caption || parking.title} className="absolute inset-0 h-full w-full object-cover" src={parking.coverImage.url} />
             ) : null}
@@ -120,8 +126,8 @@ export function ParkingDetailPage() {
 
           <div className="grid gap-6 p-6 lg:grid-cols-[1fr_280px]">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">About this space</h2>
-              <p className="mt-3 leading-7 text-slate-600">{parking.description}</p>
+              <h2 className="app-heading text-lg font-semibold">About this space</h2>
+              <p className="app-copy mt-3 leading-7">{parking.description}</p>
 
               {parking.images?.length ? (
                 <div className="mt-6 grid grid-cols-3 gap-3">
@@ -131,18 +137,18 @@ export function ParkingDetailPage() {
                 </div>
               ) : null}
 
-              <div className="mt-6 flex flex-wrap gap-2">
+                <div className="mt-6 flex flex-wrap gap-2">
                 {parking.amenities.map((amenity) => (
-                  <span className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700" key={amenity}>
+                  <span className="app-pill rounded-md px-3 py-2 text-sm" key={amenity}>
                     {amenity}
                   </span>
                 ))}
               </div>
             </div>
 
-            <aside className="rounded-lg border border-slate-200 p-4">
-              <p className="text-2xl font-bold text-slate-950">Rs {parking.hourlyPrice}/hr</p>
-              <div className="mt-4 grid gap-3 text-sm text-slate-700">
+            <aside className="app-card-muted rounded-lg">
+              <p className="app-heading text-2xl font-bold">Rs {parking.hourlyPrice}/hr</p>
+              <div className="app-copy mt-4 grid gap-3 text-sm">
                 <p className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-brand-600" aria-hidden="true" />
                   {parking.availableSlots} of {parking.totalSlots} slots available
@@ -152,7 +158,7 @@ export function ParkingDetailPage() {
                   {parking.isOpen24x7 ? 'Open 24x7' : `${parking.operatingHours.open} to ${parking.operatingHours.close}`}
                 </p>
               </div>
-              <button className="mt-4 inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={handleToggleSaved} type="button">
+              <button className="mt-4 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-100" onClick={handleToggleSaved} style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text-muted)' }} type="button">
                 {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
                 {isSaved ? 'Saved to favorites' : 'Save parking'}
               </button>

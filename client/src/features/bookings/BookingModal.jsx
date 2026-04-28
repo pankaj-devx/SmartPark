@@ -74,10 +74,10 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 py-8">
-      <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-950">{confirmation ? 'Booking confirmed' : 'Reserve slot'}</h2>
-          <button aria-label="Close booking modal" className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={onClose} type="button">
+      <div className="app-modal max-h-full w-full max-w-lg overflow-y-auto rounded-lg">
+        <div className="app-divider flex items-center justify-between border-b px-5 py-4">
+          <h2 className="app-heading text-lg font-semibold">{confirmation ? 'Booking confirmed' : 'Reserve slot'}</h2>
+          <button aria-label="Close booking modal" className="rounded-md p-1 hover:bg-slate-100" onClick={onClose} style={{ color: 'var(--app-text-soft)' }} type="button">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
@@ -109,9 +109,9 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               <Field label="End time" name="endTime" onChange={updateField} required type="time" value={form.endTime} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
                 Vehicle type
-                <select className="rounded-md border border-slate-300 px-3 py-2" name="vehicleType" onChange={updateField} required value={form.vehicleType}>
+                <select className="app-input" name="vehicleType" onChange={updateField} required value={form.vehicleType}>
                   {parking.vehicleTypes.map((type) => (
                     <option key={type} value={type}>
                       {type}
@@ -122,8 +122,8 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               <Field label="Slots" min="1" max={parking.availableSlots} name="slotCount" onChange={updateField} required type="number" value={form.slotCount} />
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <dl className="grid gap-2 text-sm text-slate-700">
+            <div className="app-card-muted rounded-lg">
+              <dl className="app-copy grid gap-2 text-sm">
                 <SummaryItem label="Duration" value={durationHours ? `${durationHours} hour${durationHours === 1 ? '' : 's'}` : 'Select time'} />
                 <SummaryItem label="Hourly rate" value={`Rs ${parking.hourlyPrice}`} />
                 <SummaryItem label="Estimated total" value={`Rs ${estimatedTotal}`} />
@@ -152,9 +152,9 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
 function Field({ label, ...props }) {
   return (
-    <label className="grid gap-2 text-sm font-medium text-slate-700">
+    <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
       {label}
-      <input className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100" {...props} />
+      <input className="app-input" {...props} />
     </label>
   );
 }
@@ -162,8 +162,8 @@ function Field({ label, ...props }) {
 function SummaryItem({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="font-semibold capitalize text-slate-950">{value}</dd>
+      <dt className="app-copy-soft">{label}</dt>
+      <dd className="app-heading font-semibold capitalize">{value}</dd>
     </div>
   );
 }

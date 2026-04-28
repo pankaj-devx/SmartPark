@@ -9,13 +9,14 @@ html {
 :root {
   --app-bg: #f8fafc;
   --app-surface: #ffffff;
-  --app-surface-muted: #f8fafc;
+  --app-surface-muted: #f1f5f9;
+  --app-surface-subtle: #e2e8f0;
   --app-surface-strong: #0f172a;
   --app-border: #e2e8f0;
   --app-border-strong: #cbd5e1;
   --app-text: #0f172a;
   --app-text-muted: #475569;
-  --app-text-soft: #64748b;
+  --app-text-soft: #5b6b81;
   --app-pill: #f1f5f9;
   --app-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
@@ -24,14 +25,15 @@ html[data-theme='dark'] {
   color-scheme: dark;
   --app-bg: #020617;
   --app-surface: #0f172a;
-  --app-surface-muted: #111827;
-  --app-surface-strong: #0b1220;
-  --app-border: rgba(148, 163, 184, 0.18);
-  --app-border-strong: rgba(148, 163, 184, 0.28);
-  --app-text: #e5eefb;
-  --app-text-muted: #cbd5e1;
-  --app-text-soft: #94a3b8;
-  --app-pill: rgba(148, 163, 184, 0.12);
+  --app-surface-muted: #172235;
+  --app-surface-subtle: #223148;
+  --app-surface-strong: #09111f;
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-border-strong: rgba(148, 163, 184, 0.38);
+  --app-text: #f2f7ff;
+  --app-text-muted: #d8e2f0;
+  --app-text-soft: #afbdd1;
+  --app-pill: rgba(148, 163, 184, 0.18);
   --app-shadow: 0 18px 45px rgba(2, 6, 23, 0.45);
 }
 
@@ -70,6 +72,12 @@ a {
 
   .app-surface-muted {
     background: var(--app-surface-muted);
+    border: 1px solid var(--app-border);
+    color: var(--app-text);
+  }
+
+  .app-surface-subtle {
+    background: var(--app-surface-subtle);
     border: 1px solid var(--app-border);
     color: var(--app-text);
   }
@@ -143,6 +151,19 @@ a {
     box-shadow: 0 0 0 3px rgba(22, 133, 86, 0.16);
   }
 
+  .app-input option {
+    background: var(--app-surface);
+    color: var(--app-text);
+  }
+
+  .app-link {
+    color: var(--app-text-muted);
+  }
+
+  .app-link:hover {
+    color: var(--app-text);
+  }
+
   .app-tab {
     @apply inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition;
     background: var(--app-surface);
@@ -159,5 +180,16 @@ a {
     background: var(--app-surface-strong);
     border-color: transparent;
     color: #f8fafc;
+  }
+
+  .app-modal {
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    color: var(--app-text);
+    box-shadow: var(--app-shadow);
+  }
+
+  .app-divider {
+    border-color: var(--app-border);
   }
 }

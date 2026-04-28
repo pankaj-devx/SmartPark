@@ -6,10 +6,8 @@ import {
   MapPin,
   Navigation,
   Search,
-  ShieldCheck,
   Sparkles,
-  Store,
-  Timer
+  Store
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -25,24 +23,6 @@ const trendingSearches = [
   { label: 'Airport', filters: { search: 'Airport' } },
   { label: 'Stadium', filters: { search: 'Stadium' } },
   { label: 'Business District', filters: { search: 'Business District' } }
-];
-
-const howItWorks = [
-  {
-    icon: Search,
-    title: 'Search live inventory',
-    text: 'Look by city, area, landmark, or listing name and refine by time when you need a guaranteed window.'
-  },
-  {
-    icon: Timer,
-    title: 'Preview your reservation',
-    text: 'Open a listing, choose your date and time, and review the booking estimate before you commit.'
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Sign in only at checkout',
-    text: 'Guests can explore freely. Authentication shows up only when it is time to save or complete a reservation.'
-  }
 ];
 
 const quickActions = [
@@ -184,22 +164,22 @@ export function HomePage() {
 
   return (
     <div className="flex flex-col gap-10 pb-16">
-      <section className="overflow-hidden bg-slate-950 px-4 py-16 text-white sm:py-24">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-          <div>
+      <section className="overflow-hidden bg-slate-950 px-4 py-14 text-white sm:py-18">
+        <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.3fr_0.95fr] xl:items-stretch">
+          <div className="grid content-start gap-5">
             <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/90">
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               Guest discovery dashboard
             </p>
-            <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
+            <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl xl:text-[3.5rem]">
               Find the right parking space before you ever hit a login wall
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
+            <p className="max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
               Explore live inventory, preview booking details, and move from discovery to reservation with a guest-first flow that stays fast.
             </p>
 
-            <div className="mt-8 rounded-3xl bg-white p-3 shadow-2xl">
-              <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+            <div className="rounded-3xl bg-white p-3 shadow-2xl">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
                 <SearchBar
                   value={searchValue}
                   onChange={setSearchValue}
@@ -248,12 +228,17 @@ export function HomePage() {
             {heroError ? (
               <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{heroError}</p>
             ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <HeroMetric label="Explore freely" value="Guest-first" text="Search, compare, and preview without an early login wall." />
+              <HeroMetric label="Keep momentum" value={recentlyViewed.length || recentSearches.length ? 'Saved locally' : 'Ready'} text="Recent discovery stays close on this device when you want to pick up quickly." />
+            </div>
           </div>
 
-          <div className="grid gap-4 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+          <div className="grid gap-4 rounded-3xl border border-white/12 bg-white/6 p-5 shadow-xl backdrop-blur">
+            <div className="rounded-2xl border border-white/12 bg-white/6 p-5">
               <p className="text-sm font-medium uppercase tracking-wide text-white/70">Quick actions</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {quickActions.map((item) => (
                   <QuickActionCard
                     key={item.title}
@@ -263,34 +248,39 @@ export function HomePage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <p className="text-sm font-medium uppercase tracking-wide text-white/70">How booking works</p>
-              <div className="mt-4 grid gap-3">
-                {howItWorks.map((item, index) => (
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4" key={item.title}>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-white/60">Step {index + 1}</p>
-                    <p className="mt-2 font-semibold text-white">{item.title}</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">{item.text}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="rounded-2xl border border-white/12 bg-white/6 p-5">
+              <p className="text-sm font-medium uppercase tracking-wide text-white/70">Continue exploring</p>
+              {continueExploringItems.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                  <p className="text-sm font-semibold text-white">Start a search to build momentum</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">Recent searches and listing views appear here so you can reopen the right options faster.</p>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-3">
+                  {continueExploringItems.slice(0, 3).map((item) => (
+                    <Link className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 transition hover:bg-white/10" key={item.id} to={item.to}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-white/60">{item.eyebrow}</p>
+                          <p className="mt-2 font-semibold text-white">{item.title}</p>
+                        </div>
+                        <ArrowRight className="mt-1 h-4 w-4 text-white/60" aria-hidden="true" />
+                      </div>
+                      <p className="mt-1 text-sm leading-6 text-slate-300">{item.description}</p>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-7xl gap-4 px-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Featured spaces" value={featuredParkings.length} description="Curated public listings ready to explore." />
-        <StatTile label="Recent searches" value={recentSearches.length} description="Local guest search history follows you on this device." />
-        <StatTile label="Recently viewed" value={recentlyViewed.length} description="Listings you opened most recently." />
-        <StatTile label="Nearby mode" value={locationFilters ? 'Live' : 'Ready'} description={locationFilters ? 'Location-aware discovery is active.' : 'Use location to unlock nearby results.'} />
-      </section>
-
       <section className="mx-auto w-full max-w-7xl px-4">
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-950">Featured parking spaces</h2>
-            <p className="mt-2 text-slate-600">Premium listings with fast paths into details and reservation preview.</p>
+            <h2 className="app-heading text-2xl font-bold tracking-tight">Featured parking spaces</h2>
+            <p className="app-copy mt-2">Premium listings with fast paths into details and reservation preview.</p>
           </div>
           <Link className="hidden items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 sm:flex" to="/parkings">
             View all <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -344,88 +334,32 @@ export function HomePage() {
           )}
         </Panel>
 
-        <Panel title="Continue exploring" subtitle="Return to the searches and listings that were already worth your attention.">
-          {continueExploringItems.length === 0 ? (
+        <Panel title="Continue exploring" subtitle="Pick up from the places and searches that already narrowed the field.">
+          {continueExploringItems.length === 0 && recentSearches.length === 0 && recentlyViewed.length === 0 ? (
             <EmptyPanel
-              action={<button className="mt-4 inline-flex rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => navigateToSearch()} type="button">Start browsing</button>}
-              description="As soon as you search or open a listing, SmartPark keeps a lightweight trail here."
+              action={<button className="mt-4 inline-flex rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => navigateToSearch({ search: 'Downtown' })} type="button">Try a trending search</button>}
+              description="Recent searches and viewed listings appear here automatically as you explore."
               title="Nothing to resume yet"
             />
           ) : (
-            <div className="grid gap-3">
-              {continueExploringItems.map((item) => (
-                <Link className="rounded-2xl border border-slate-200 p-4 transition hover:border-brand-300 hover:bg-brand-50" key={item.id} to={item.to}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">{item.eyebrow}</p>
-                  <p className="mt-2 font-semibold text-slate-950">{item.title}</p>
-                  <p className="mt-1 text-sm text-slate-600">{item.description}</p>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </section>
-
-      <section className="mx-auto grid w-full max-w-7xl gap-6 px-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <Panel title="Recent searches" subtitle="Reopen proven search paths instead of starting each parking run from scratch.">
-          {recentSearches.length === 0 ? (
-            <EmptyPanel
-              action={<button className="mt-4 inline-flex rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => navigateToSearch({ search: 'Downtown' })} type="button">Try a trending search</button>}
-              description="Search history is stored locally so you can keep momentum even before creating an account."
-              title="No recent searches yet"
-            />
-          ) : (
-            <div className="grid gap-3">
-              {recentSearches.slice(0, 4).map((item) => (
+            <div className="grid gap-3 md:grid-cols-2">
+              {recentSearches.slice(0, 2).map((item) => (
                 <button
-                  className="rounded-2xl border border-slate-200 p-4 text-left transition hover:border-brand-300 hover:bg-brand-50"
+                  className="app-card rounded-2xl text-left transition hover:border-brand-300 hover:bg-brand-50"
                   key={item.label}
                   onClick={() => navigateToSearch({ search: item.label })}
                   type="button"
                 >
-                  <p className="inline-flex items-center gap-2 font-semibold text-slate-950">
-                    <Search className="h-4 w-4 text-brand-600" aria-hidden="true" />
-                    {item.label}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent search'}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Recent search</p>
+                  <p className="app-heading mt-2 font-semibold">{item.label}</p>
+                  <p className="app-copy mt-1 text-sm">{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent search'}</p>
                 </button>
               ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Recently viewed" subtitle="Keep active comparisons close while you narrow down the right space.">
-          {recentlyViewed.length === 0 ? (
-            <EmptyPanel
-              action={<Link className="mt-4 inline-flex rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" to="/parkings">Explore featured listings</Link>}
-              description="Open any parking card or detail page and it will appear here for quick comparison."
-              title="No viewed listings yet"
-            />
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {recentlyViewed.slice(0, 4).map((parking) => (
+              {recentlyViewed.slice(0, 2).map((parking) => (
                 <MiniParkingCard key={parking.id} parking={parking} />
               ))}
             </div>
           )}
-        </Panel>
-      </section>
-
-      <section className="mx-auto w-full max-w-7xl px-4">
-        <Panel title="Trending locations" subtitle="Real quick-search shortcuts into public discovery, not dead-end category chips.">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {trendingSearches.map((item) => (
-              <button
-                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:bg-brand-50"
-                key={item.label}
-                onClick={() => navigateToSearch(item.filters)}
-                type="button"
-              >
-                <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">Quick search</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">{item.label}</p>
-                <p className="mt-2 text-sm text-slate-600">Open public inventory and refine from there.</p>
-              </button>
-            ))}
-          </div>
         </Panel>
       </section>
 
@@ -456,22 +390,30 @@ function QuickActionCard({ item, onNearby }) {
 
   return item.to ? (
     <Link className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 transition hover:bg-white/10" to={item.to}>
-      <Icon className="h-5 w-5 text-white" aria-hidden="true" />
-      <p className="mt-3 font-semibold text-white">{item.title}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Icon className="h-5 w-5 text-white" aria-hidden="true" />
+          <p className="mt-3 font-semibold text-white">{item.title}</p>
+        </div>
+        <ArrowRight className="mt-1 h-4 w-4 text-white/70" aria-hidden="true" />
+      </div>
       <p className="mt-2 text-sm leading-6 text-slate-300">{item.description}</p>
       <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-white">
         {item.actionLabel}
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </span>
     </Link>
   ) : (
     <button className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 text-left transition hover:bg-white/10" onClick={onNearby} type="button">
-      <Icon className="h-5 w-5 text-white" aria-hidden="true" />
-      <p className="mt-3 font-semibold text-white">{item.title}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Icon className="h-5 w-5 text-white" aria-hidden="true" />
+          <p className="mt-3 font-semibold text-white">{item.title}</p>
+        </div>
+        <ArrowRight className="mt-1 h-4 w-4 text-white/70" aria-hidden="true" />
+      </div>
       <p className="mt-2 text-sm leading-6 text-slate-300">{item.description}</p>
       <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-white">
         {item.actionLabel}
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </span>
     </button>
   );
@@ -481,9 +423,9 @@ function FeaturedParkingCard({ parking }) {
   const reservePath = `/parkings/${parking.id}?intent=reserve`;
 
   return (
-    <article className="flex min-w-[295px] max-w-[340px] snap-start flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <article className="app-panel flex min-w-[290px] max-w-[332px] snap-start flex-col overflow-hidden rounded-3xl p-0">
       <Link className="group block" to={`/parkings/${parking.id}`}>
-        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+        <div className="relative aspect-[4/3] overflow-hidden" style={{ background: 'var(--app-surface-muted)' }}>
           {parking.coverImage ? (
             <img
               alt={parking.coverImage.caption || parking.title}
@@ -501,20 +443,20 @@ function FeaturedParkingCard({ parking }) {
         </div>
       </Link>
       <div className="flex flex-1 flex-col p-5">
-        <Link className="font-semibold text-slate-950 hover:text-brand-700" to={`/parkings/${parking.id}`}>
+        <Link className="app-heading font-semibold hover:text-brand-700" to={`/parkings/${parking.id}`}>
           {parking.title}
         </Link>
-        <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+        <p className="app-copy mt-2 flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="line-clamp-1">{[parking.area, parking.city, parking.state].filter(Boolean).join(', ')}</span>
         </p>
-        <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{parking.description}</p>
-        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-700">
+        <p className="app-copy mt-3 line-clamp-2 text-sm leading-6">{parking.description}</p>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--app-text-muted)' }}>
           <span className="rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">{parking.availableSlots} slots available</span>
-          {parking.parkingType ? <span className="rounded-full bg-slate-100 px-3 py-1 capitalize">{parking.parkingType}</span> : null}
+          {parking.parkingType ? <span className="app-pill rounded-full px-3 py-1 capitalize">{parking.parkingType}</span> : null}
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Link className="inline-flex rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" to={`/parkings/${parking.id}`}>
+          <Link className="inline-flex rounded-2xl border px-4 py-2 text-sm font-semibold hover:bg-slate-50" style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }} to={`/parkings/${parking.id}`}>
             View details
           </Link>
           <Link className="inline-flex rounded-2xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={reservePath}>
@@ -522,16 +464,6 @@ function FeaturedParkingCard({ parking }) {
           </Link>
         </div>
       </div>
-    </article>
-  );
-}
-
-function StatTile({ description, label, value }) {
-  return (
-    <article className="app-stat">
-      <p className="app-copy-soft text-sm font-medium">{label}</p>
-      <p className="app-heading mt-3 text-2xl font-bold">{value}</p>
-      <p className="app-copy mt-2 text-sm leading-6">{description}</p>
     </article>
   );
 }
@@ -558,22 +490,22 @@ function EmptyPanel({ action, description, title }) {
 
 function MiniParkingCard({ parking }) {
   return (
-    <article className="rounded-2xl border border-slate-200 p-4">
+    <article className="app-card rounded-2xl">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold text-slate-950">{parking.title}</p>
-          <p className="mt-1 text-sm text-slate-600">{[parking.area, parking.city, parking.state].filter(Boolean).join(', ')}</p>
+          <p className="app-heading font-semibold">{parking.title}</p>
+          <p className="app-copy mt-1 text-sm">{[parking.area, parking.city, parking.state].filter(Boolean).join(', ')}</p>
         </div>
         {parking.hourlyPrice != null ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Rs {parking.hourlyPrice}/hr</span>
+          <span className="app-pill rounded-full px-3 py-1 text-xs font-semibold">Rs {parking.hourlyPrice}/hr</span>
         ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-700">
-        {parking.availableSlots != null ? <span className="rounded-full bg-slate-100 px-3 py-1">{parking.availableSlots} slots</span> : null}
-        {parking.parkingType ? <span className="rounded-full bg-slate-100 px-3 py-1 capitalize">{parking.parkingType}</span> : null}
+      <div className="mt-3 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--app-text-muted)' }}>
+        {parking.availableSlots != null ? <span className="app-pill rounded-full px-3 py-1">{parking.availableSlots} slots</span> : null}
+        {parking.parkingType ? <span className="app-pill rounded-full px-3 py-1 capitalize">{parking.parkingType}</span> : null}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100" to={`/parkings/${parking.id}`}>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-slate-100" style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text-muted)' }} to={`/parkings/${parking.id}`}>
           <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
           View details
         </Link>
@@ -585,15 +517,25 @@ function MiniParkingCard({ parking }) {
   );
 }
 
+function HeroMetric({ label, text, value }) {
+  return (
+    <div className="rounded-2xl border border-white/12 bg-white/6 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-white/60">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{text}</p>
+    </div>
+  );
+}
+
 function CarouselSkeleton() {
   return (
     <div className="flex gap-5 overflow-hidden">
       {[0, 1, 2].map((item) => (
-        <div className="min-w-[295px] max-w-[340px] animate-pulse rounded-3xl border border-slate-200 bg-white p-5" key={item}>
-          <div className="aspect-[4/3] rounded-2xl bg-slate-200" />
-          <div className="mt-5 h-5 w-2/3 rounded bg-slate-200" />
-          <div className="mt-3 h-4 w-1/2 rounded bg-slate-100" />
-          <div className="mt-5 h-12 rounded-2xl bg-slate-100" />
+        <div className="min-w-[290px] max-w-[332px] animate-pulse rounded-3xl border p-5" key={item} style={{ borderColor: 'var(--app-border)', background: 'var(--app-surface)' }}>
+          <div className="aspect-[4/3] rounded-2xl" style={{ background: 'var(--app-surface-subtle)' }} />
+          <div className="mt-5 h-5 w-2/3 rounded" style={{ background: 'var(--app-surface-subtle)' }} />
+          <div className="mt-3 h-4 w-1/2 rounded" style={{ background: 'var(--app-surface-muted)' }} />
+          <div className="mt-5 h-12 rounded-2xl" style={{ background: 'var(--app-surface-muted)' }} />
         </div>
       ))}
     </div>

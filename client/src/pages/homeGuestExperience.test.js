@@ -13,13 +13,30 @@ test('guest homepage connects major discovery and conversion flows', () => {
   assert.ok(source.includes('buildDiscoveryPath'));
   assert.ok(source.includes('/register?role=owner'));
   assert.ok(source.includes('Create an account'));
-  assert.ok(source.includes('Trending locations'));
   assert.ok(source.includes('Continue exploring'));
   assert.ok(source.includes('Recently viewed'));
-  assert.ok(source.includes('Recent searches'));
-  assert.ok(source.includes('How booking works'));
   assert.ok(source.includes('Reserve preview'));
-  assert.ok(source.includes('Return to the searches and listings'));
+  assert.ok(source.includes('Pick up from the places and searches'));
+  assert.ok(source.includes('Explore freely'));
+  assert.ok(source.includes('Keep momentum'));
+});
+
+test('guest hero uses denser layout composition instead of a sparse split hero', () => {
+  const source = readFileSync(join(currentDir, 'HomePage.jsx'), 'utf8');
+
+  assert.ok(source.includes('xl:grid-cols-[1.3fr_0.95fr]'));
+  assert.ok(source.includes('HeroMetric'));
+  assert.ok(source.includes('continueExploringItems.slice(0, 3)'));
+});
+
+test('guest dashboard removes tutorial-style sections in favor of fewer stronger modules', () => {
+  const source = readFileSync(join(currentDir, 'HomePage.jsx'), 'utf8');
+
+  assert.ok(!source.includes('How booking works'));
+  assert.ok(!source.includes('Trending locations'));
+  assert.ok(!source.includes('StatTile'));
+  assert.ok(source.includes('Featured parking spaces'));
+  assert.ok(source.includes('Nearby recommended parking'));
 });
 
 test('guest featured cards and search results route into listing detail and reserve preview', () => {

@@ -50,17 +50,18 @@ export function AuthModal({ isOpen, onClose, onSuccess, title = 'Sign in require
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl relative max-h-[90vh] overflow-y-auto">
+      <div className="app-modal relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg p-6">
         <button
-          className="absolute right-4 top-4 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+          className="absolute right-4 top-4 rounded-md p-1 hover:bg-slate-100"
           onClick={onClose}
+          style={{ color: 'var(--app-text-soft)' }}
           type="button"
         >
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
 
-        <h2 className="text-2xl font-bold text-slate-950">{title}</h2>
-        <p className="mt-2 text-sm text-slate-600">
+        <h2 className="app-heading text-2xl font-bold">{title}</h2>
+        <p className="app-copy mt-2 text-sm">
           {mode === 'login' 
             ? 'Please sign in to continue with your action.' 
             : 'Create an account to continue.'}
@@ -92,10 +93,10 @@ export function AuthModal({ isOpen, onClose, onSuccess, title = 'Sign in require
           
           {mode === 'register' && (
             <>
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
                 Account type
                 <select
-                  className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
+                  className="app-input"
                   name="role"
                   onChange={updateField}
                   value={form.role}
@@ -117,7 +118,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, title = 'Sign in require
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-600">
+        <div className="app-copy mt-6 text-center text-sm">
           {mode === 'login' ? (
             <p>
               Don't have an account?{' '}
