@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addParkingImages,
   approveParking,
   buildParkingCreatePayload,
   buildParkingSort,
@@ -8,12 +9,16 @@ import {
   createParking,
   listNearbyParkings,
   listPublicParkings,
+  removeParkingImage,
+  setPrimaryParkingImage,
   updateParking
 } from './parking.service.js';
 
 const ownerId = '507f1f77bcf86cd799439011';
 const otherOwnerId = '507f1f77bcf86cd799439012';
 const parkingId = '507f1f77bcf86cd799439013';
+const imageId = '507f1f77bcf86cd799439014';
+const secondImageId = '507f1f77bcf86cd799439015';
 
 const validInput = {
   title: 'Station Parking',
@@ -219,6 +224,134 @@ test('admin approval marks listing approved and active', async () => {
   assert.equal(approved.isActive, true);
 });
 
+test('owner can upload parking images and first image becomes primary', async () => {
+  const document = makeParking(buildParkingCreatePayload(validInput, ownerId));
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  const updated = await addParkingImages(
+    parkingId,
+    [makeFile('front.jpg'), makeFile('gate.jpg')],
+    makeUser('owner', ownerId),
+    {
+      ParkingModel,
+      async uploadParkingImage(file) {
+        return {
+          url: `https://cdn.example.com/${file.originalname}`,
+          publicId: `smartpark/${file.originalname}`
+        };
+      }
+    }
+  );
+
+  assert.equal(updated.images.length, 2);
+  assert.equal(updated.images[0].isPrimary, true);
+  assert.equal(updated.coverImage.url, 'https://cdn.example.com/front.jpg');
+  assert.equal(updated.imageCount, 2);
+});
+
+test('owner cannot manage another owner image media', async () => {
+  const ParkingModel = {
+    async findById() {
+      return makeParking(buildParkingCreatePayload(validInput, otherOwnerId));
+    }
+  };
+
+  await assert.rejects(
+    () =>
+      addParkingImages(parkingId, [makeFile('front.jpg')], makeUser('owner', ownerId), {
+        ParkingModel,
+        async uploadParkingImage() {
+          return { url: 'https://cdn.example.com/front.jpg', publicId: 'front' };
+        }
+      }),
+    /own parking listings/
+  );
+});
+
+test('upload rejects more than five total images', async () => {
+  const document = makeParking({
+    ...buildParkingCreatePayload(validInput, ownerId),
+    images: [
+      makeImage(imageId, true),
+      makeImage(secondImageId),
+      makeImage('507f1f77bcf86cd799439016'),
+      makeImage('507f1f77bcf86cd799439017')
+    ]
+  });
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  await assert.rejects(
+    () =>
+      addParkingImages(parkingId, [makeFile('a.jpg'), makeFile('b.jpg')], makeUser('owner', ownerId), {
+        ParkingModel,
+        async uploadParkingImage() {
+          return { url: 'https://cdn.example.com/a.jpg', publicId: 'a' };
+        }
+      }),
+    /at most 5 images/
+  );
+});
+
+test('owner can delete parking image and summary updates', async () => {
+  let deletedPublicId;
+  const document = makeParking({
+    ...buildParkingCreatePayload(validInput, ownerId),
+    images: [makeImage(imageId, true), makeImage(secondImageId)],
+    imageCount: 2
+  });
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  const updated = await removeParkingImage(parkingId, imageId, makeUser('owner', ownerId), {
+    ParkingModel,
+    async deleteParkingImage(publicId) {
+      deletedPublicId = publicId;
+    }
+  });
+
+  assert.equal(deletedPublicId, 'smartpark/front');
+  assert.equal(updated.images.length, 1);
+  assert.equal(updated.images[0].id, secondImageId);
+  assert.equal(updated.images[0].isPrimary, true);
+  assert.equal(updated.imageCount, 1);
+});
+
+test('owner can set primary parking image', async () => {
+  const document = makeParking({
+    ...buildParkingCreatePayload(validInput, ownerId),
+    images: [makeImage(imageId, true), makeImage(secondImageId)],
+    imageCount: 2
+  });
+
+  const ParkingModel = {
+    async findById() {
+      return document;
+    }
+  };
+
+  const updated = await setPrimaryParkingImage(parkingId, secondImageId, makeUser('owner', ownerId), {
+    ParkingModel
+  });
+
+  assert.equal(updated.coverImage.id, secondImageId);
+  assert.equal(updated.images.find((image) => image.id === imageId).isPrimary, false);
+  assert.equal(updated.images.find((image) => image.id === secondImageId).isPrimary, true);
+});
+
 function makeUser(role, id) {
   return {
     _id: {
@@ -251,6 +384,9 @@ function makeParking(overrides = {}) {
     isOpen24x7: overrides.isOpen24x7 ?? true,
     operatingHours: overrides.operatingHours ?? { open: '00:00', close: '23:59' },
     popularityScore: overrides.popularityScore ?? 0,
+    images: overrides.images ?? [],
+    coverImage: overrides.coverImage ?? null,
+    imageCount: overrides.imageCount ?? overrides.images?.length ?? 0,
     distance: overrides.distance,
     rankingScore: overrides.rankingScore,
     owner: {
@@ -264,5 +400,25 @@ function makeParking(overrides = {}) {
     async save() {
       return this;
     }
+  };
+}
+
+function makeFile(originalname) {
+  return {
+    originalname,
+    buffer: Buffer.from('image-bytes'),
+    mimetype: 'image/jpeg'
+  };
+}
+
+function makeImage(id, isPrimary = false) {
+  return {
+    _id: {
+      toString: () => id
+    },
+    url: id === imageId ? 'https://cdn.example.com/front.jpg' : 'https://cdn.example.com/side.jpg',
+    publicId: id === imageId ? 'smartpark/front' : 'smartpark/side',
+    isPrimary,
+    caption: ''
   };
 }

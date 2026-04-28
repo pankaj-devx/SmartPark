@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Clock, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from './parkingApi.js';
 
@@ -39,8 +39,12 @@ export function ParkingDetailPage() {
 
       {parking ? (
         <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid min-h-64 place-items-center bg-slate-100 px-6 text-center">
-            <div>
+          <div className="relative grid min-h-64 place-items-center bg-slate-100 px-6 text-center">
+            {parking.coverImage ? (
+              <img alt={parking.coverImage.caption || parking.title} className="absolute inset-0 h-full w-full object-cover" src={parking.coverImage.url} />
+            ) : null}
+            <div className={`relative ${parking.coverImage ? 'rounded-lg bg-white/90 p-5 shadow-sm' : ''}`}>
+              {!parking.coverImage ? <Camera className="mx-auto mb-3 h-8 w-8 text-slate-400" aria-hidden="true" /> : null}
               <p className="text-sm font-medium uppercase text-brand-700">{parking.parkingType} parking</p>
               <h1 className="mt-3 text-3xl font-bold text-slate-950">{parking.title}</h1>
               <p className="mt-3 flex items-center justify-center gap-2 text-slate-600">
@@ -54,6 +58,14 @@ export function ParkingDetailPage() {
             <div>
               <h2 className="text-lg font-semibold text-slate-950">About this space</h2>
               <p className="mt-3 leading-7 text-slate-600">{parking.description}</p>
+
+              {parking.images?.length ? (
+                <div className="mt-6 grid grid-cols-3 gap-3">
+                  {parking.images.map((image) => (
+                    <img alt={image.caption || parking.title} className="aspect-video rounded-md object-cover" key={image.id} src={image.url} />
+                  ))}
+                </div>
+              ) : null}
 
               <div className="mt-6 flex flex-wrap gap-2">
                 {parking.amenities.map((amenity) => (

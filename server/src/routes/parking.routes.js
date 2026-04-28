@@ -2,24 +2,29 @@ import { Router } from 'express';
 import {
   approveParkingListing,
   createParkingListing,
+  deleteParkingListingImage,
   deleteParkingListing,
   getMyParkingListings,
   getNearbyParkingListings,
   getParkingListing,
   getPublicParkingListings,
   rejectParkingListing,
-  updateParkingListing
+  setPrimaryParkingListingImage,
+  updateParkingListing,
+  uploadParkingListingImages
 } from '../controllers/parking.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorizeRoles } from '../middleware/authorizeRoles.js';
 import { optionalAuthenticate } from '../middleware/optionalAuthenticate.js';
 import { requireDatabase } from '../middleware/requireDatabase.js';
+import { uploadParkingImages } from '../middleware/uploadParkingImages.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import {
   createParkingSchema,
   listParkingQuerySchema,
   nearbyParkingQuerySchema,
   rejectParkingSchema,
+  setPrimaryImageSchema,
   updateParkingSchema
 } from '../validators/parking.validator.js';
 
@@ -41,6 +46,29 @@ parkingRoutes.post(
   createParkingListing
 );
 parkingRoutes.get('/mine', requireDatabase, authenticate, authorizeRoles('owner', 'admin'), getMyParkingListings);
+parkingRoutes.post(
+  '/:id/images',
+  requireDatabase,
+  authenticate,
+  authorizeRoles('owner', 'admin'),
+  uploadParkingImages,
+  uploadParkingListingImages
+);
+parkingRoutes.delete(
+  '/:id/images/:imageId',
+  requireDatabase,
+  authenticate,
+  authorizeRoles('owner', 'admin'),
+  deleteParkingListingImage
+);
+parkingRoutes.patch(
+  '/:id/images/primary',
+  requireDatabase,
+  authenticate,
+  authorizeRoles('owner', 'admin'),
+  validateRequest(setPrimaryImageSchema),
+  setPrimaryParkingListingImage
+);
 parkingRoutes.patch(
   '/:id/approve',
   requireDatabase,

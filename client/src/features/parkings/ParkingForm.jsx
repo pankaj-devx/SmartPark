@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ListingImageUploader } from './ListingImageUploader.jsx';
 
 const vehicleOptions = ['2-wheeler', '4-wheeler'];
 const amenityOptions = ['covered', 'cctv', 'ev charging', 'security', 'valet', 'accessible'];
@@ -25,8 +26,9 @@ const emptyForm = {
   operatingClose: '23:59'
 };
 
-export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitLabel }) {
+export function ParkingForm({ initialParking = null, onCancel, onMediaChange, onSubmit, submitLabel }) {
   const [form, setForm] = useState(() => toFormState(initialParking));
+  const [pendingImageFiles, setPendingImageFiles] = useState([]);
 
   function updateField(event) {
     const { checked, name, type, value } = event.target;
@@ -46,9 +48,16 @@ export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitL
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    onSubmit(toPayload(form));
+    const savedParking = await onSubmit(toPayload(form), pendingImageFiles);
+
+    if (savedParking) {
+      setPendingImageFiles([]);
+      if (!initialParking) {
+        setForm(emptyForm);
+      }
+    }
   }
 
   return (
@@ -100,6 +109,13 @@ export function ParkingForm({ initialParking = null, onCancel, onSubmit, submitL
 
       <CheckboxGroup label="Vehicle types" options={vehicleOptions} selected={form.vehicleTypes} onToggle={(value) => toggleArrayField('vehicleTypes', value)} />
       <CheckboxGroup label="Amenities" options={amenityOptions} selected={form.amenities} onToggle={(value) => toggleArrayField('amenities', value)} />
+
+      <ListingImageUploader
+        parking={initialParking}
+        pendingFiles={pendingImageFiles}
+        onChange={onMediaChange}
+        onPendingFilesChange={setPendingImageFiles}
+      />
 
       <div className="grid gap-4 md:grid-cols-[180px_1fr_1fr]">
         <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">

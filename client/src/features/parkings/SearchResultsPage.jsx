@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Navigation, Search } from 'lucide-react';
+import { BadgeCheck, Camera, Car, MapPin, Navigation, Search, Shield, Zap } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchNearbyParkings, fetchPublicParkings } from './parkingApi.js';
 import { FilterSidebar } from './FilterSidebar.jsx';
@@ -173,7 +173,18 @@ export function SearchResultsPage() {
 
 function ParkingResultCard({ parking }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="relative bg-slate-100">
+        {parking.coverImage ? (
+          <img alt={parking.coverImage.caption || parking.title} className="aspect-video w-full object-cover" src={parking.coverImage.url} />
+        ) : (
+          <div className="grid aspect-video place-items-center text-slate-400">
+            <Camera className="h-8 w-8" aria-hidden="true" />
+          </div>
+        )}
+        <p className="absolute right-3 top-3 rounded-md bg-white/95 px-3 py-1 text-sm font-semibold text-brand-700 shadow-sm">Rs {parking.hourlyPrice}/hr</p>
+      </div>
+      <div className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">{parking.title}</h2>
@@ -182,21 +193,33 @@ function ParkingResultCard({ parking }) {
             {[parking.area, parking.city, parking.state].filter(Boolean).join(', ')}
           </p>
         </div>
-        <p className="shrink-0 rounded-md bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700">Rs {parking.hourlyPrice}/hr</p>
       </div>
       <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{parking.description}</p>
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-        <span className="rounded-md bg-slate-100 px-2 py-1">{parking.availableSlots} slots</span>
+        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 font-medium text-emerald-700">
+          <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          {parking.availableSlots} slots
+        </span>
         {parking.distance ? <span className="rounded-md bg-slate-100 px-2 py-1">{(parking.distance / 1000).toFixed(1)} km</span> : null}
         {parking.vehicleTypes.map((type) => (
-          <span key={type} className="rounded-md bg-slate-100 px-2 py-1">
+          <span key={type} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1">
+            <Car className="h-3.5 w-3.5" aria-hidden="true" />
             {type}
+          </span>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+        {parking.amenities.slice(0, 4).map((amenity) => (
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1" key={amenity}>
+            {amenity === 'ev charging' ? <Zap className="h-3.5 w-3.5" aria-hidden="true" /> : <Shield className="h-3.5 w-3.5" aria-hidden="true" />}
+            {amenity}
           </span>
         ))}
       </div>
       <Link className="mt-5 inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100" to={`/parkings/${parking.id}`}>
         View details
       </Link>
+      </div>
     </article>
   );
 }

@@ -13,5 +13,9 @@ export const env = {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  AUTH_DEBUG: process.env.AUTH_DEBUG === 'true'
+  AUTH_DEBUG: process.env.AUTH_DEBUG === 'true',
+  CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME ?? '',
+  CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ?? '',
+  CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ?? '',
+  CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER ?? 'smartpark/parkings'
 };

@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
+import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js';
 import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
+
+const MAX_PARKING_IMAGES = 5;
 
 export function serializeParking(parking) {
   return {
@@ -26,6 +29,9 @@ export function serializeParking(parking) {
     isOpen24x7: parking.isOpen24x7 ?? true,
     operatingHours: parking.operatingHours ?? { open: '00:00', close: '23:59' },
     popularityScore: parking.popularityScore ?? 0,
+    images: (parking.images ?? []).map(serializeParkingImage),
+    coverImage: serializeCoverImage(parking.coverImage),
+    imageCount: parking.imageCount ?? parking.images?.length ?? 0,
     distance: parking.distance,
     rankingScore: parking.rankingScore,
     owner: parking.owner?._id?.toString?.() ?? parking.owner?.toString?.(),
@@ -60,6 +66,9 @@ export function buildParkingCreatePayload(input, ownerId) {
     isOpen24x7: input.isOpen24x7 ?? true,
     operatingHours: input.operatingHours ?? { open: '00:00', close: '23:59' },
     popularityScore: 0,
+    images: [],
+    coverImage: {},
+    imageCount: 0,
     owner: ownerId,
     verificationStatus: 'pending',
     isActive: true
@@ -317,6 +326,97 @@ export async function rejectParking(id, reason = '', deps = {}) {
   return serializeParking(parking);
 }
 
+export async function addParkingImages(id, files, user, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const uploadImage = deps.uploadParkingImage ?? uploadParkingImage;
+  const parking = await findParkingById(ParkingModel, id);
+
+  if (!canManageParking(user, parking)) {
+    throw createHttpError(403, 'You can only manage images for your own parking listings');
+  }
+
+  if (!files?.length) {
+    throw createHttpError(400, 'At least one image is required');
+  }
+
+  const existingCount = parking.images?.length ?? 0;
+
+  if (existingCount + files.length > MAX_PARKING_IMAGES) {
+    throw createHttpError(409, `A parking listing can have at most ${MAX_PARKING_IMAGES} images`);
+  }
+
+  const uploadedImages = await Promise.all(
+    files.map(async (file, index) => {
+      const uploaded = await uploadImage(file);
+
+      return {
+        _id: new mongoose.Types.ObjectId(),
+        url: uploaded.url,
+        publicId: uploaded.publicId,
+        isPrimary: existingCount === 0 && index === 0,
+        caption: file.originalname ?? ''
+      };
+    })
+  );
+
+  parking.images.push(...uploadedImages);
+  syncParkingImageSummary(parking);
+  await parking.save();
+
+  return serializeParking(parking);
+}
+
+export async function removeParkingImage(id, imageId, user, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const deleteImage = deps.deleteParkingImage ?? deleteParkingImage;
+  const parking = await findParkingById(ParkingModel, id);
+
+  if (!canManageParking(user, parking)) {
+    throw createHttpError(403, 'You can only manage images for your own parking listings');
+  }
+
+  const image = findParkingImage(parking, imageId);
+
+  if (!image) {
+    throw createHttpError(404, 'Parking image not found');
+  }
+
+  await deleteImage(image.publicId);
+  parking.images = parking.images.filter((item) => item._id.toString() !== imageId);
+
+  if (parking.images.length > 0 && !parking.images.some((item) => item.isPrimary)) {
+    parking.images[0].isPrimary = true;
+  }
+
+  syncParkingImageSummary(parking);
+  await parking.save();
+
+  return serializeParking(parking);
+}
+
+export async function setPrimaryParkingImage(id, imageId, user, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const parking = await findParkingById(ParkingModel, id);
+
+  if (!canManageParking(user, parking)) {
+    throw createHttpError(403, 'You can only manage images for your own parking listings');
+  }
+
+  const image = findParkingImage(parking, imageId);
+
+  if (!image) {
+    throw createHttpError(404, 'Parking image not found');
+  }
+
+  parking.images.forEach((item) => {
+    item.isPrimary = item._id.toString() === imageId;
+  });
+  syncParkingImageSummary(parking);
+  await parking.save();
+
+  return serializeParking(parking);
+}
+
 async function findParkingById(ParkingModel, id) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw createHttpError(404, 'Parking listing not found');
@@ -368,6 +468,64 @@ function applyParkingUpdates(parking, input) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function serializeParkingImage(image) {
+  return {
+    id: image._id?.toString?.() ?? image.id,
+    url: image.url,
+    publicId: image.publicId,
+    isPrimary: image.isPrimary,
+    caption: image.caption ?? ''
+  };
+}
+
+function serializeCoverImage(coverImage) {
+  if (!coverImage?.url) {
+    return null;
+  }
+
+  return {
+    id: coverImage.imageId?.toString?.() ?? coverImage.imageId,
+    url: coverImage.url,
+    publicId: coverImage.publicId,
+    caption: coverImage.caption ?? ''
+  };
+}
+
+function findParkingImage(parking, imageId) {
+  if (!mongoose.Types.ObjectId.isValid(imageId)) {
+    return null;
+  }
+
+  return parking.images.find((image) => image._id.toString() === imageId);
+}
+
+function syncParkingImageSummary(parking) {
+  parking.imageCount = parking.images.length;
+
+  if (parking.images.length === 0) {
+    parking.coverImage = {};
+    return;
+  }
+
+  let primaryImage = parking.images.find((image) => image.isPrimary);
+
+  if (!primaryImage) {
+    primaryImage = parking.images[0];
+    primaryImage.isPrimary = true;
+  }
+
+  parking.images.forEach((image) => {
+    image.isPrimary = image._id.toString() === primaryImage._id.toString();
+  });
+
+  parking.coverImage = {
+    imageId: primaryImage._id,
+    url: primaryImage.url,
+    publicId: primaryImage.publicId,
+    caption: primaryImage.caption ?? ''
+  };
 }
 
 function applyRanking(parkings, query = {}) {

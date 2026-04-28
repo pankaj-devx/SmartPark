@@ -35,6 +35,30 @@ export async function updateParking(id, payload) {
   return response.data.data.parking;
 }
 
+export async function uploadParkingImages(id, files, onUploadProgress) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('images', file));
+
+  const response = await apiClient.post(`/parkings/${id}/images`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    onUploadProgress
+  });
+
+  return response.data.data.parking;
+}
+
+export async function deleteParkingImage(id, imageId) {
+  const response = await apiClient.delete(`/parkings/${id}/images/${imageId}`);
+  return response.data.data.parking;
+}
+
+export async function setPrimaryParkingImage(id, imageId) {
+  const response = await apiClient.patch(`/parkings/${id}/images/primary`, { imageId });
+  return response.data.data.parking;
+}
+
 export async function deleteParking(id) {
   const response = await apiClient.delete(`/parkings/${id}`);
   return response.data.data.parking;

@@ -1,5 +1,6 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
+  addParkingImages,
   approveParking,
   createParking,
   getParkingDetail,
@@ -7,6 +8,8 @@ import {
   listOwnerParkings,
   listPublicParkings,
   rejectParking,
+  removeParkingImage,
+  setPrimaryParkingImage,
   softDeleteParking,
   updateParking
 } from '../services/parking.service.js';
@@ -64,6 +67,39 @@ export const getParkingListing = asyncHandler(async (req, res) => {
 
 export const updateParkingListing = asyncHandler(async (req, res) => {
   const parking = await updateParking(req.params.id, req.body, req.user);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      parking
+    }
+  });
+});
+
+export const uploadParkingListingImages = asyncHandler(async (req, res) => {
+  const parking = await addParkingImages(req.params.id, req.files ?? [], req.user);
+
+  res.status(201).json({
+    success: true,
+    data: {
+      parking
+    }
+  });
+});
+
+export const deleteParkingListingImage = asyncHandler(async (req, res) => {
+  const parking = await removeParkingImage(req.params.id, req.params.imageId, req.user);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      parking
+    }
+  });
+});
+
+export const setPrimaryParkingListingImage = asyncHandler(async (req, res) => {
+  const parking = await setPrimaryParkingImage(req.params.id, req.body.imageId, req.user);
 
   res.status(200).json({
     success: true,

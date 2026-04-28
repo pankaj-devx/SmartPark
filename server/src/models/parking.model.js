@@ -1,5 +1,33 @@
 import mongoose from 'mongoose';
 
+const parkingImageSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    publicId: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    isPrimary: {
+      type: Boolean,
+      default: false
+    },
+    caption: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+      default: ''
+    }
+  },
+  {
+    _id: true
+  }
+);
+
 const parkingSchema = new mongoose.Schema(
   {
     title: {
@@ -127,6 +155,37 @@ const parkingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0
+    },
+    images: {
+      type: [parkingImageSchema],
+      default: []
+    },
+    coverImage: {
+      url: {
+        type: String,
+        trim: true,
+        default: ''
+      },
+      publicId: {
+        type: String,
+        trim: true,
+        default: ''
+      },
+      imageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null
+      },
+      caption: {
+        type: String,
+        trim: true,
+        default: ''
+      }
+    },
+    imageCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
     },
     owner: {
       type: mongoose.Schema.Types.ObjectId,

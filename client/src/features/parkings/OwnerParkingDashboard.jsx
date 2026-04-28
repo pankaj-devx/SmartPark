@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Edit3, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
-import { createParking, deleteParking, fetchMyParkings, updateParking } from './parkingApi.js';
+import { createParking, deleteParking, fetchMyParkings, updateParking, uploadParkingImages } from './parkingApi.js';
 import { ParkingForm } from './ParkingForm.jsx';
 
 export function OwnerParkingDashboard() {
@@ -27,26 +27,41 @@ export function OwnerParkingDashboard() {
     Promise.resolve().then(loadMine);
   }, [loadMine]);
 
-  async function handleCreate(payload) {
+  async function handleCreate(payload, imageFiles = []) {
     setError('');
 
     try {
-      const parking = await createParking(payload);
+      let parking = await createParking(payload);
+
+      if (imageFiles.length > 0) {
+        parking = await uploadParkingImages(parking.id, imageFiles);
+      }
+
       setParkings((current) => [parking, ...current]);
+      setEditingParking(parking);
+      return parking;
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to create parking listing'));
+      return null;
     }
   }
 
-  async function handleUpdate(payload) {
+  async function handleUpdate(payload, imageFiles = []) {
     setError('');
 
     try {
-      const parking = await updateParking(editingParking.id, payload);
+      let parking = await updateParking(editingParking.id, payload);
+
+      if (imageFiles.length > 0) {
+        parking = await uploadParkingImages(parking.id, imageFiles);
+      }
+
       setParkings((current) => current.map((item) => (item.id === parking.id ? parking : item)));
       setEditingParking(null);
+      return parking;
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to update parking listing'));
+      return null;
     }
   }
 
@@ -59,6 +74,11 @@ export function OwnerParkingDashboard() {
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to delete parking listing'));
     }
+  }
+
+  function handleMediaChange(parking) {
+    setParkings((current) => current.map((item) => (item.id === parking.id ? parking : item)));
+    setEditingParking(parking);
   }
 
   return (
@@ -77,6 +97,7 @@ export function OwnerParkingDashboard() {
             key={editingParking?.id ?? 'create'}
             initialParking={editingParking}
             onCancel={editingParking ? () => setEditingParking(null) : undefined}
+            onMediaChange={handleMediaChange}
             onSubmit={editingParking ? handleUpdate : handleCreate}
             submitLabel={editingParking ? 'Update listing' : 'Create listing'}
           />
@@ -88,6 +109,9 @@ export function OwnerParkingDashboard() {
           <div className="grid gap-4">
             {parkings.map((parking) => (
               <article key={parking.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                {parking.coverImage ? (
+                  <img alt={parking.coverImage.caption || parking.title} className="mb-4 aspect-video w-full rounded-md object-cover" src={parking.coverImage.url} />
+                ) : null}
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h3 className="font-semibold text-slate-950">{parking.title}</h3>
