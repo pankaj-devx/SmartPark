@@ -1,3 +1,6 @@
+/* Leaflet map styles — required for tiles and markers to render correctly */
+@import 'leaflet/dist/leaflet.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

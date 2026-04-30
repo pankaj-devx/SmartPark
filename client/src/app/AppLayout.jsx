@@ -28,6 +28,9 @@ export function AppLayout() {
               <Link className="hover:text-slate-950" to="/parkings">
                 All spaces
               </Link>
+              <Link className="hover:text-slate-950" to="/map">
+                Map view
+              </Link>
               <Link className="hover:text-slate-950" to="/register?role=owner">
                 List your space
               </Link>

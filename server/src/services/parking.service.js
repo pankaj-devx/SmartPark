@@ -36,6 +36,13 @@ const PARKING_LIST_PROJECTION = {
 };
 
 export function serializeParking(parking) {
+  // Extract coordinates from the GeoJSON location field.
+  // GeoJSON stores [longitude, latitude] — we expose both the nested
+  // `coordinates` object AND flat `latitude`/`longitude` fields so
+  // clients can use whichever shape they prefer.
+  const lng = parking.location?.coordinates?.[0] ?? null;
+  const lat = parking.location?.coordinates?.[1] ?? null;
+
   return {
     id: parking._id.toString(),
     title: parking.title,
@@ -46,9 +53,13 @@ export function serializeParking(parking) {
     area: parking.area ?? '',
     state: parking.state,
     pincode: parking.pincode,
+    // Flat convenience fields — easier to use in map libraries
+    latitude: lat,
+    longitude: lng,
+    // Nested object — matches the create/update request shape
     coordinates: {
-      lng: parking.location.coordinates[0],
-      lat: parking.location.coordinates[1]
+      lng,
+      lat
     },
     totalSlots: parking.totalSlots,
     availableSlots: parking.availableSlots,

@@ -14,6 +14,7 @@ import {
 export const driverNavItems = [
   { label: 'Home', to: '/dashboard', icon: LayoutDashboard },
   { label: 'Discover', to: '/parkings', icon: MapPinned },
+  { label: 'Map', to: '/map', icon: MapPinned },
   { label: 'Reservations', to: '/bookings', icon: ClipboardList },
   { label: 'Saved', to: '/saved', icon: Bookmark },
   { label: 'Account', to: '/settings', icon: CircleUserRound }

@@ -239,4 +239,24 @@ parkingSchema.pre('validate', function validateAvailableSlots() {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Virtual fields: latitude & longitude
+// ---------------------------------------------------------------------------
+// These are convenience read-only accessors so callers can do
+//   parking.latitude  → same as parking.location.coordinates[1]
+//   parking.longitude → same as parking.location.coordinates[0]
+//
+// GeoJSON stores coordinates as [longitude, latitude] (x, y order).
+// The virtuals expose them in the more familiar lat/lng naming.
+// They are NOT stored in MongoDB — they are computed on the fly.
+// ---------------------------------------------------------------------------
+
+parkingSchema.virtual('latitude').get(function getLatitude() {
+  return this.location?.coordinates?.[1] ?? null;
+});
+
+parkingSchema.virtual('longitude').get(function getLongitude() {
+  return this.location?.coordinates?.[0] ?? null;
+});
+
 export const Parking = mongoose.model('Parking', parkingSchema);

@@ -8,7 +8,9 @@
     "dev": "nodemon --watch src --legacy-watch src/server.js",
     "start": "node src/server.js",
     "lint": "eslint .",
-    "test": "node --test"
+    "test": "node --test",
+    "seed:parkings": "node src/scripts/seedParkings.js",
+    "seed:parkings:fresh": "SEED_CLEAR=true node src/scripts/seedParkings.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
