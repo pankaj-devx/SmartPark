@@ -14,8 +14,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LocateFixed, MapPin, RefreshCw, Search, X } from 'lucide-react';
+import { ExternalLink, LocateFixed, MapPin, Navigation, RefreshCw, Route, Search, X } from 'lucide-react';
 import { getNearbyParking } from '../features/map/mapService.js';
+import { buildGoogleMapsUrl, getRoute } from '../features/map/routeService.js';
 import { MapView } from '../features/map/MapView.jsx';
 import { getApiErrorMessage } from '../lib/getApiErrorMessage.js';
 
@@ -35,6 +36,16 @@ export function MapPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const hasMounted = useRef(false);
+
+  // ── Routing state ────────────────────────────────────────────────────────
+  // selectedParking — the parking the user clicked "Get directions" on
+  // routeData       — { polyline, distanceKm, durationMin } from routeService
+  // isRouting       — true while the route API call is in flight
+  // routeError      — non-fatal: shown in the route panel, does not clear map
+  const [selectedParking, setSelectedParking] = useState(null);
+  const [routeData, setRouteData] = useState(null);
+  const [isRouting, setIsRouting] = useState(false);
+  const [routeError, setRouteError] = useState('');
 
   // ── Fetch nearby parkings ────────────────────────────────────────────────
   const loadNearby = useCallback(async (lat, lng, km = radiusKm) => {
@@ -124,6 +135,68 @@ export function MapPage() {
   // ── Derived UI state ─────────────────────────────────────────────────────
   const mapCenter = center ?? FALLBACK_CENTER;
   const showManualForm = locationStatus === 'denied' || locationStatus === 'unavailable';
+
+  // ── Route handling ───────────────────────────────────────────────────────
+
+  /**
+   * Called when the user clicks "Get directions" on a marker popup.
+   * Fetches a driving route from the user's current location to the parking.
+   */
+  async function handleSelectParking(parking) {
+    // Clicking the same parking again clears the route (toggle off)
+    if (selectedParking?.id === parking.id) {
+      setSelectedParking(null);
+      setRouteData(null);
+      setRouteError('');
+      return;
+    }
+
+    setSelectedParking(parking);
+    setRouteData(null);
+    setRouteError('');
+
+    // Need the user's location as the route origin
+    if (!center || locationStatus === 'denied' || locationStatus === 'unavailable') {
+      setRouteError(
+        'Your location is needed to draw a route. Use "Use my location" above, or enter coordinates manually.'
+      );
+      return;
+    }
+
+    setIsRouting(true);
+
+    try {
+      const result = await getRoute(
+        { lat: center.lat, lng: center.lng },
+        { lat: parking.latitude, lng: parking.longitude }
+      );
+      setRouteData(result);
+    } catch {
+      // Route failed — non-fatal, keep the map working
+      setRouteError(
+        'Could not calculate a driving route to this parking. You can still open it in Google Maps.'
+      );
+    } finally {
+      setIsRouting(false);
+    }
+  }
+
+  /** Clear the active route and deselect the parking */
+  function clearRoute() {
+    setSelectedParking(null);
+    setRouteData(null);
+    setRouteError('');
+  }
+
+  /** Open the selected parking's destination in Google Maps */
+  function openInGoogleMaps() {
+    if (!selectedParking) return;
+    const url = buildGoogleMapsUrl(
+      { lat: selectedParking.latitude, lng: selectedParking.longitude },
+      selectedParking.title
+    );
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
@@ -251,11 +324,111 @@ export function MapPage() {
 
         {/* Map — takes up the left column */}
         <div style={{ height: '560px' }}>
-          <MapView center={mapCenter} parkings={parkings} zoom={13} />
+          <MapView
+            center={mapCenter}
+            parkings={parkings}
+            zoom={13}
+            routeData={routeData}
+            userLocation={center}
+            onSelectParking={handleSelectParking}
+            selectedParking={selectedParking}
+          />
         </div>
 
-        {/* Sidebar — parking list */}
+        {/* Sidebar — route info panel + parking list */}
         <aside className="flex flex-col gap-3">
+
+          {/* ── Route info panel ──────────────────────────────────────── */}
+          {/* Shown whenever a parking is selected, regardless of route state */}
+          {selectedParking ? (
+            <div className="rounded-xl border p-4" style={{ borderColor: 'var(--app-border)', background: 'var(--app-surface)' }}>
+
+              {/* Header row */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Route className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+                  <p className="app-heading text-sm font-semibold">Route to destination</p>
+                </div>
+                <button
+                  aria-label="Clear route"
+                  className="rounded-md p-1 hover:bg-slate-100"
+                  onClick={clearRoute}
+                  style={{ color: 'var(--app-text-muted)' }}
+                  type="button"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              {/* Destination name */}
+              <p className="mt-2 truncate text-sm font-medium" style={{ color: 'var(--app-text)' }}>
+                {selectedParking.title}
+              </p>
+              <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--app-text-muted)' }}>
+                {[selectedParking.area, selectedParking.city].filter(Boolean).join(', ')}
+              </p>
+
+              {/* Route loading spinner */}
+              {isRouting ? (
+                <div className="mt-3 flex items-center gap-2 text-xs" style={{ color: 'var(--app-text-muted)' }}>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" aria-hidden="true" />
+                  Calculating route…
+                </div>
+              ) : null}
+
+              {/* Route error — non-fatal */}
+              {routeError ? (
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {routeError}
+                </p>
+              ) : null}
+
+              {/* Route summary — distance + ETA */}
+              {routeData && !isRouting ? (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-blue-50 px-3 py-2 text-center">
+                    <p className="text-lg font-bold text-blue-700">{routeData.distanceKm} km</p>
+                    <p className="text-xs text-blue-600">Distance</p>
+                  </div>
+                  <div className="rounded-lg bg-blue-50 px-3 py-2 text-center">
+                    <p className="text-lg font-bold text-blue-700">{routeData.durationMin} min</p>
+                    <p className="text-xs text-blue-600">Est. drive time</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Action buttons */}
+              <div className="mt-3 grid gap-2">
+                {/* Open in Google Maps */}
+                <button
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                  onClick={openInGoogleMaps}
+                  type="button"
+                >
+                  <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
+                  Open in Google Maps
+                  <ExternalLink className="h-3 w-3 opacity-70" aria-hidden="true" />
+                </button>
+
+                {/* View parking details */}
+                <Link
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-slate-100"
+                  style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }}
+                  to={`/parkings/${selectedParking.id}`}
+                >
+                  View parking details
+                </Link>
+              </div>
+            </div>
+          ) : (
+            /* Hint shown when no parking is selected */
+            <div className="rounded-xl border border-dashed px-4 py-3 text-center text-xs" style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text-muted)' }}>
+              <Route className="mx-auto mb-1 h-4 w-4" aria-hidden="true" />
+              Click a marker then "Get directions" to draw a route
+            </div>
+          )}
+
+          {/* ── Result count heading ───────────────────────────────────── */}
           <h2 className="app-heading text-lg font-semibold">
             {isLoading ? 'Searching…' : `${parkings.length} result${parkings.length !== 1 ? 's' : ''}`}
           </h2>
@@ -290,7 +463,12 @@ export function MapPage() {
           {/* Parking cards */}
           {!isLoading
             ? parkings.map((parking) => (
-                <ParkingSidebarCard key={parking.id} parking={parking} />
+                <ParkingSidebarCard
+                  key={parking.id}
+                  parking={parking}
+                  isSelected={selectedParking?.id === parking.id}
+                  onGetDirections={handleSelectParking}
+                />
               ))
             : null}
         </aside>
@@ -303,13 +481,16 @@ export function MapPage() {
 // ParkingSidebarCard
 // ---------------------------------------------------------------------------
 // Compact card shown in the sidebar next to the map.
-// Clicking "View details" navigates to the existing ParkingDetailPage.
+// Props:
+//   parking         - parking object
+//   isSelected      - true when this parking is the active route destination
+//   onGetDirections - callback(parking) to trigger route drawing
 // ---------------------------------------------------------------------------
-function ParkingSidebarCard({ parking }) {
+function ParkingSidebarCard({ parking, isSelected = false, onGetDirections = null }) {
   return (
     <article
-      className="rounded-xl border p-4 transition hover:border-brand-300"
-      style={{ borderColor: 'var(--app-border)', background: 'var(--app-surface)' }}
+      className={`rounded-xl border p-4 transition ${isSelected ? 'border-blue-400 bg-blue-50' : 'hover:border-brand-300'}`}
+      style={isSelected ? {} : { borderColor: 'var(--app-border)', background: 'var(--app-surface)' }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -338,13 +519,32 @@ function ParkingSidebarCard({ parking }) {
         ) : null}
       </div>
 
-      <Link
-        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-slate-100"
-        style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }}
-        to={`/parkings/${parking.id}`}
-      >
-        View details
-      </Link>
+      <div className="mt-3 grid gap-2">
+        {/* Get directions button */}
+        {onGetDirections ? (
+          <button
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+              isSelected
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'border hover:bg-slate-100'
+            }`}
+            style={isSelected ? {} : { borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }}
+            onClick={() => onGetDirections(parking)}
+            type="button"
+          >
+            <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
+            {isSelected ? 'Clear route' : 'Get directions'}
+          </button>
+        ) : null}
+
+        <Link
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-slate-100"
+          style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }}
+          to={`/parkings/${parking.id}`}
+        >
+          View details
+        </Link>
+      </div>
     </article>
   );
 }
