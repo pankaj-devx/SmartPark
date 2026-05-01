@@ -44,15 +44,43 @@ const selectedIcon = L.icon({
   className: 'marker-selected' // hook for CSS filter if desired
 });
 
-export function MapMarker({ parking, isSelected = false, onSelect = null }) {
+// Recommended marker — amber/gold tinted div icon to distinguish smart picks
+const recommendedIcon = L.divIcon({
+  className: '',
+  html: `
+    <div style="position:relative;width:28px;height:46px;">
+      <img
+        src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png"
+        style="width:25px;height:41px;filter:sepia(1) saturate(4) hue-rotate(5deg) brightness(1.1);"
+        alt=""
+      />
+      <span style="
+        position:absolute;top:-6px;right:-6px;
+        background:#f59e0b;color:#fff;
+        border-radius:50%;width:16px;height:16px;
+        font-size:10px;font-weight:700;
+        display:flex;align-items:center;justify-content:center;
+        border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);
+      ">★</span>
+    </div>
+  `,
+  iconSize: [28, 46],
+  iconAnchor: [14, 46],
+  popupAnchor: [1, -40]
+});
+
+export function MapMarker({ parking, isSelected = false, isRecommended = false, onSelect = null }) {
   // Guard: skip markers that have no valid coordinates
   if (parking.latitude == null || parking.longitude == null) {
     return null;
   }
 
+  // Icon priority: selected > recommended > default
+  const icon = isSelected ? selectedIcon : isRecommended ? recommendedIcon : defaultIcon;
+
   return (
     <Marker
-      icon={isSelected ? selectedIcon : defaultIcon}
+      icon={icon}
       // Leaflet expects [latitude, longitude] — opposite of GeoJSON order
       position={[parking.latitude, parking.longitude]}
     >

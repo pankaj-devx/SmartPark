@@ -16,8 +16,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, LocateFixed, MapPin, Navigation, RefreshCw, Route, Search, X } from 'lucide-react';
 import { getNearbyParking } from '../features/map/mapService.js';
+import { getSmartParking } from '../features/map/mapSmartService.js';
+import { getNearbyLandmarks } from '../features/map/landmarkService.js';
 import { buildGoogleMapsUrl, getRoute } from '../features/map/routeService.js';
 import { MapView } from '../features/map/MapView.jsx';
+import { RecommendedParkingPanel } from '../features/map/RecommendedParkingPanel.jsx';
+import { LandmarksPanel } from '../features/map/LandmarksPanel.jsx';
 import { getApiErrorMessage } from '../lib/getApiErrorMessage.js';
 
 // Default fallback location — centre of India
@@ -26,7 +30,7 @@ const DEFAULT_RADIUS_KM = 5;
 
 export function MapPage() {
   // ── State ────────────────────────────────────────────────────────────────
-  const [center, setCenter] = useState(null);           // current map centre
+  const [center, setCenter] = useState(FALLBACK_CENTER); // always start at fallback
   const [parkings, setParkings] = useState([]);         // markers to render
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
   const [manualLat, setManualLat] = useState('');       // manual input fields
@@ -47,17 +51,40 @@ export function MapPage() {
   const [isRouting, setIsRouting] = useState(false);
   const [routeError, setRouteError] = useState('');
 
+  // ── Phase 7C state ───────────────────────────────────────────────────────
+  const [recommendations, setRecommendations] = useState([]);
+  const [isLoadingRecs, setIsLoadingRecs] = useState(false);
+  const [recsError, setRecsError] = useState('');
+  const [recsUsingFallback, setRecsUsingFallback] = useState(false);
+
+  const [landmarks, setLandmarks] = useState([]);
+  const [isLoadingLandmarks, setIsLoadingLandmarks] = useState(false);
+  const [landmarksError, setLandmarksError] = useState('');
+
   // ── Fetch nearby parkings ────────────────────────────────────────────────
   const loadNearby = useCallback(async (lat, lng, km = radiusKm) => {
     setError('');
     setIsLoading(true);
 
+    // Expand radius automatically if no results — max 2 retries
+    const radiiToTry = [km, 10, 20].filter((r, i, arr) => arr.indexOf(r) === i); // dedupe
+
     try {
-      const results = await getNearbyParking(lat, lng, km);
+      let results = [];
+      let usedRadius = km;
+
+      for (const radius of radiiToTry) {
+        results = await getNearbyParking(lat, lng, radius);
+        usedRadius = radius;
+        if (results.length > 0) break;
+      }
+
       setParkings(results);
 
       if (results.length === 0) {
-        setError(`No approved parking found within ${km} km. Try increasing the radius.`);
+        setError(`No approved parking found within ${radiiToTry.at(-1)} km. Try a different location.`);
+      } else if (usedRadius > km) {
+        setError(`No parking within ${km} km. Showing results within ${usedRadius} km.`);
       }
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to load nearby parking. Please try again.'));
@@ -67,16 +94,34 @@ export function MapPage() {
     }
   }, [radiusKm]);
 
+  // ── Phase 7C: Fetch smart recommendations ───────────────────────────────
+  const loadSmartRecommendations = useCallback(async (lat, lng, usingFallback = false) => {
+    setIsLoadingRecs(true);
+    setRecsError('');
+    setRecsUsingFallback(usingFallback);
+    try {
+      const recs = await getSmartParking(lat, lng);
+      setRecommendations(Array.isArray(recs) ? recs : []);
+    } catch {
+      setRecsError('Smart recommendations unavailable right now.');
+      setRecommendations([]);
+    } finally {
+      setIsLoadingRecs(false);
+    }
+  }, []);
+
   // ── Geolocation ──────────────────────────────────────────────────────────
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
+      // No geolocation support — load using fallback silently
+      console.warn('[SmartPark] Geolocation not supported, using fallback location.');
       setLocationStatus('unavailable');
-      setError('Location services are not supported in this browser. Enter coordinates manually below.');
+      loadNearby(FALLBACK_CENTER.lat, FALLBACK_CENTER.lng);
+      loadSmartRecommendations(FALLBACK_CENTER.lat, FALLBACK_CENTER.lng, true);
       return;
     }
 
     setLocationStatus('requesting');
-    setError('');
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -88,21 +133,20 @@ export function MapPage() {
         setManualLat(String(lat.toFixed(6)));
         setManualLng(String(lng.toFixed(6)));
         loadNearby(lat, lng);
+        loadSmartRecommendations(lat, lng);
       },
       (geolocationError) => {
-        // Permission denied or position unavailable
-        const isDenied = geolocationError.code === geolocationError.PERMISSION_DENIED;
-        setLocationStatus(isDenied ? 'denied' : 'unavailable');
-        setError(
-          isDenied
-            ? 'Location access was denied. Enter your coordinates manually to search nearby parking.'
-            : 'Unable to determine your location. Enter coordinates manually below.'
-        );
-        // Show the map at the fallback centre so it's not blank
-        setCenter(FALLBACK_CENTER);
-      }
+        // Location failed — load using fallback silently, no error shown to user
+        console.warn('[SmartPark] Geolocation failed, using fallback location.', geolocationError.message);
+        setLocationStatus('denied');
+        // center is already FALLBACK_CENTER from initial state
+        loadNearby(FALLBACK_CENTER.lat, FALLBACK_CENTER.lng);
+        loadSmartRecommendations(FALLBACK_CENTER.lat, FALLBACK_CENTER.lng, true);
+      },
+      // Safe options — no watchPosition, fast timeout, allow cached
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
     );
-  }, [loadNearby]);
+  }, [loadNearby, loadSmartRecommendations]);
 
   // Auto-request location on first mount
   useEffect(() => {
@@ -130,10 +174,11 @@ export function MapPage() {
 
     setCenter({ lat, lng });
     loadNearby(lat, lng, radiusKm);
+    loadSmartRecommendations(lat, lng); // Phase 7C
   }
 
   // ── Derived UI state ─────────────────────────────────────────────────────
-  const mapCenter = center ?? FALLBACK_CENTER;
+  const mapCenter = center; // always defined — starts at FALLBACK_CENTER
   const showManualForm = locationStatus === 'denied' || locationStatus === 'unavailable';
 
   // ── Route handling ───────────────────────────────────────────────────────
@@ -154,6 +199,15 @@ export function MapPage() {
     setSelectedParking(parking);
     setRouteData(null);
     setRouteError('');
+
+    // Phase 7C: fetch landmarks for the selected parking
+    setLandmarks([]);
+    setLandmarksError('');
+    setIsLoadingLandmarks(true);
+    getNearbyLandmarks(parking.latitude, parking.longitude)
+      .then((results) => setLandmarks(Array.isArray(results) ? results : []))
+      .catch(() => setLandmarksError('Could not load nearby places.'))
+      .finally(() => setIsLoadingLandmarks(false));
 
     // Need the user's location as the route origin
     if (!center || locationStatus === 'denied' || locationStatus === 'unavailable') {
@@ -186,6 +240,8 @@ export function MapPage() {
     setSelectedParking(null);
     setRouteData(null);
     setRouteError('');
+    setLandmarks([]);
+    setLandmarksError('');
   }
 
   /** Open the selected parking's destination in Google Maps */
@@ -193,7 +249,7 @@ export function MapPage() {
     if (!selectedParking) return;
     const url = buildGoogleMapsUrl(
       { lat: selectedParking.latitude, lng: selectedParking.longitude },
-      selectedParking.title
+      locationStatus === 'granted' ? center : null
     );
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -312,12 +368,17 @@ export function MapPage() {
       ) : null}
 
       {/* ── Loading state ────────────────────────────────────────────────── */}
-      {locationStatus === 'requesting' && !center ? (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }}>
-          <RefreshCw className="h-4 w-4 animate-spin text-brand-600" aria-hidden="true" />
-          Requesting your location…
-        </div>
-      ) : null}
+      {/* Removed: was only shown when center was null, which can no longer happen */}
+
+      {/* ── Phase 7C: Smart Recommendations ────────────────────────────── */}
+      <RecommendedParkingPanel
+        recommendations={recommendations}
+        isLoading={isLoadingRecs}
+        error={recsError}
+        onSelect={handleSelectParking}
+        selectedParking={selectedParking}
+        usingFallback={recsUsingFallback}
+      />
 
       {/* ── Main layout: map + sidebar ───────────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
@@ -332,6 +393,7 @@ export function MapPage() {
             userLocation={center}
             onSelectParking={handleSelectParking}
             selectedParking={selectedParking}
+            recommendedParkings={recommendations}
           />
         </div>
 
@@ -427,6 +489,17 @@ export function MapPage() {
               Click a marker then "Get directions" to draw a route
             </div>
           )}
+
+          {/* ── Phase 7C: Landmarks for selected parking ──────────────── */}
+          {selectedParking ? (
+            <LandmarksPanel
+              landmarks={landmarks}
+              isLoading={isLoadingLandmarks}
+              error={landmarksError}
+              parkingName={selectedParking.title}
+              userLocation={center}
+            />
+          ) : null}
 
           {/* ── Result count heading ───────────────────────────────────── */}
           <h2 className="app-heading text-lg font-semibold">

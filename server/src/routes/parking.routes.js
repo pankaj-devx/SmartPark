@@ -8,6 +8,7 @@ import {
   getNearbyParkingListings,
   getParkingListing,
   getPublicParkingListings,
+  getSmartParkingRecommendations,
   rejectParkingListing,
   setPrimaryParkingListingImage,
   updateParkingListing,
@@ -25,6 +26,7 @@ import {
   nearbyParkingQuerySchema,
   rejectParkingSchema,
   setPrimaryImageSchema,
+  smartParkingQuerySchema,
   updateParkingSchema
 } from '../validators/parking.validator.js';
 
@@ -36,6 +38,13 @@ parkingRoutes.get(
   requireDatabase,
   validateRequest(nearbyParkingQuerySchema, 'query'),
   getNearbyParkingListings
+);
+// Phase 7C — must be declared before /:id to avoid param capture
+parkingRoutes.get(
+  '/smart',
+  requireDatabase,
+  validateRequest(smartParkingQuerySchema, 'query'),
+  getSmartParkingRecommendations
 );
 parkingRoutes.post(
   '/',

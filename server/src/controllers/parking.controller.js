@@ -7,6 +7,7 @@ import {
   listNearbyParkings,
   listOwnerParkings,
   listPublicParkings,
+  listSmartParkings,
   rejectParking,
   removeParkingImage,
   setPrimaryParkingImage,
@@ -138,6 +139,22 @@ export const rejectParkingListing = asyncHandler(async (req, res) => {
     success: true,
     data: {
       parking
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7C — Smart Recommendations
+// ---------------------------------------------------------------------------
+export const getSmartParkingRecommendations = asyncHandler(async (req, res) => {
+  const { lat, lng, radiusKm, limit } = req.validatedQuery;
+  const recommendations = await listSmartParkings(lat, lng, radiusKm, limit);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      recommendations,
+      count: recommendations.length
     }
   });
 });

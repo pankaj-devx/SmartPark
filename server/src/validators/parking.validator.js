@@ -103,6 +103,13 @@ export const searchSuggestionsQuerySchema = z.object({
   q: z.string().trim().default('')
 });
 
+export const smartParkingQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  radiusKm: z.coerce.number().positive().max(50).default(3),
+  limit: z.coerce.number().int().positive().max(10).default(5)
+});
+
 function splitCsv(value) {
   if (typeof value !== 'string') {
     return value;

@@ -17,10 +17,12 @@ dns.setDefaultResultOrder(
 import { app } from './app.js';
 import { connectDatabase } from './config/db.js';
 import { env } from './config/env.js';
+import { seedDefaultParkings } from './utils/seedDefaultParkings.js';
 
 
 async function startServer() {
   await connectDatabase();
+  await seedDefaultParkings();
 
   app.listen(env.PORT, () => {
     console.log(`SmartPark API listening on port ${env.PORT}`);

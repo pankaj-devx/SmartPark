@@ -640,3 +640,68 @@ function getCurrentTime(now = new Date()) {
 
   return `${hours}:${minutes}`;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 7C — Smart Recommendations
+// ---------------------------------------------------------------------------
+
+/**
+ * Return top smart parking recommendations near a coordinate.
+ *
+ * Scoring formula (lower = better):
+ *   smartScore = (distanceKm * 0.5) + (hourlyPrice * 0.3) - (availableSlots * 0.2)
+ *
+ * Badges are assigned after sorting:
+ *   "Best Choice"  → lowest smartScore overall
+ *   "Closest"      → smallest distance
+ *   "Cheapest"     → lowest hourlyPrice
+ *
+ * @param {number} lat
+ * @param {number} lng
+ * @param {number} radiusKm
+ * @param {number} limit     - max results to return (3–5)
+ * @param {object} deps      - injectable deps for testing
+ */
+export async function listSmartParkings(lat, lng, radiusKm = 3, limit = 5, deps = {}) {
+  // Re-use the existing nearby query — no new DB logic needed
+  const nearby = await listNearbyParkings(
+    { lat, lng, radiusKm, radius: radiusKm * 1000, page: 1, limit: 20, sort: 'nearest' },
+    deps
+  );
+
+  const parkings = nearby.parkings;
+
+  if (!parkings.length) {
+    return [];
+  }
+
+  // Compute smart score for each parking
+  const scored = parkings.map((p) => {
+    const distanceKm = (p.distance ?? 0) / 1000;
+    const smartScore =
+      distanceKm * 0.5 + p.hourlyPrice * 0.3 - p.availableSlots * 0.2;
+
+    return { ...p, smartScore: Number(smartScore.toFixed(4)) };
+  });
+
+  // Sort ascending — lowest score is "best"
+  scored.sort((a, b) => a.smartScore - b.smartScore);
+
+  // Assign badges (one per category, no duplicates)
+  const top = scored.slice(0, limit);
+
+  const bestOverall = top[0];
+  const closest = [...top].sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))[0];
+  const cheapest = [...top].sort((a, b) => a.hourlyPrice - b.hourlyPrice)[0];
+
+  const badgeMap = new Map();
+  // Priority: Best Choice > Closest > Cheapest
+  badgeMap.set(cheapest.id, 'Cheapest');
+  badgeMap.set(closest.id, 'Closest');
+  badgeMap.set(bestOverall.id, 'Best Choice'); // overwrites if same parking
+
+  return top.map((p) => ({
+    ...p,
+    badge: badgeMap.get(p.id) ?? null
+  }));
+}

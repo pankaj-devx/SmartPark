@@ -66,18 +66,22 @@ export async function getRoute(start, end) {
 
 /**
  * Build a Google Maps directions URL that opens in a new tab.
- * The user's current location is used as the implicit origin by Google Maps.
  *
  * @param {{ lat: number, lng: number }} destination - Parking coordinates
- * @param {string} [label] - Optional parking name shown in Google Maps
+ * @param {{ lat: number, lng: number } | null} [origin] - User's current location (optional)
  * @returns {string} Google Maps URL
  */
-export function buildGoogleMapsUrl(destination, label = '') {
+export function buildGoogleMapsUrl(destination, origin = null) {
   const params = new URLSearchParams({
     api: '1',
-    destination: `${destination.lat},${destination.lng}`,
-    ...(label ? { destination_place_id: label } : {})
+    destination: `${destination.lat},${destination.lng}`
   });
+
+  // Include origin only when a real coordinate is available.
+  // Guards against lat/lng === 0 which is falsy but technically valid.
+  if (origin?.lat != null && origin?.lng != null) {
+    params.set('origin', `${origin.lat},${origin.lng}`);
+  }
 
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }

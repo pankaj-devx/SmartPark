@@ -87,7 +87,8 @@ export function MapView({
   routeData = null,
   userLocation = null,
   onSelectParking = null,
-  selectedParking = null
+  selectedParking = null,
+  recommendedParkings = []   // Phase 7C: IDs of smart-recommended parkings
 }) {
   // Leaflet needs a concrete initial centre — fall back to India's geographic
   // centre if nothing is provided yet.
@@ -95,6 +96,9 @@ export function MapView({
     center?.lat ?? 20.5937,
     center?.lng ?? 78.9629
   ];
+
+  // Build a Set of recommended parking IDs for O(1) lookup
+  const recommendedIds = new Set(recommendedParkings.map((p) => p.id));
 
   return (
     // The container div must have an explicit height — Leaflet renders nothing
@@ -144,6 +148,7 @@ export function MapView({
             key={parking.id}
             parking={parking}
             isSelected={selectedParking?.id === parking.id}
+            isRecommended={recommendedIds.has(parking.id)}
             onSelect={onSelectParking}
           />
         ))}

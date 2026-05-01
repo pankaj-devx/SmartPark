@@ -27,7 +27,8 @@ export function RecommendedParkingPanel({
   isLoading = false,
   error = '',
   onSelect = null,
-  selectedParking = null
+  selectedParking = null,
+  usingFallback = false
 }) {
   return (
     <section className="app-panel mb-5 p-4">
@@ -36,7 +37,9 @@ export function RecommendedParkingPanel({
         <Sparkles className="h-5 w-5 text-amber-500" aria-hidden="true" />
         <h2 className="app-heading text-base font-semibold">Smart Recommendations</h2>
         <span className="ml-auto text-xs" style={{ color: 'var(--app-text-muted)' }}>
-          Ranked by distance · price · availability
+          {usingFallback
+            ? 'Showing results near default location'
+            : 'Ranked by distance · price · availability'}
         </span>
       </div>
 
@@ -74,7 +77,9 @@ export function RecommendedParkingPanel({
           <Star className="mx-auto h-6 w-6 text-slate-400" aria-hidden="true" />
           <p className="app-heading mt-2 text-sm font-semibold">No recommendations available</p>
           <p className="app-copy mt-1 text-xs">
-            Allow location access or enter coordinates to see smart picks.
+            {usingFallback
+              ? 'Showing results near default location. Enter coordinates to search your area.'
+              : 'Allow location access or enter coordinates to see smart picks.'}
           </p>
         </div>
       ) : null}
