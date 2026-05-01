@@ -6,6 +6,7 @@ import { LoginPage } from '../features/auth/LoginPage.jsx';
 import { RegisterPage } from '../features/auth/RegisterPage.jsx';
 import { AdminDashboardPage } from '../features/admin/AdminDashboardPage.jsx';
 import { NotificationsPage } from '../features/notifications/NotificationsPage.jsx';
+import { OwnerParkingDetail } from '../features/owner/OwnerParkingDetail.jsx';
 import { OwnerParkingDashboard } from '../features/parkings/OwnerParkingDashboard.jsx';
 import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
 import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
@@ -139,6 +140,15 @@ export const router = createBrowserRouter([
       {
         path: 'owner/parkings',
         element: <Navigate replace to="/owner/listings" />
+      },
+      {
+        // Owner parking detail — full-width page, outside the workspace sidebar layout
+        path: 'owner/parking/:id',
+        element: (
+          <ProtectedRoute roles={['owner', 'admin']}>
+            <OwnerParkingDetail />
+          </ProtectedRoute>
+        )
       },
       {
         path: 'app',

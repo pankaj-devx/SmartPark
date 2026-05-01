@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, CheckCircle2, Edit3, Search, Trash2 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { BarChart3, CheckCircle2, Edit3, ExternalLink, Search, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { ProfilePage } from '../../pages/ProfilePage.jsx';
 import { completeOwnerBooking, fetchOwnerBookings } from '../owner/ownerApi.js';
@@ -16,6 +17,7 @@ const statusStyles = {
 const cachedData = readOwnerCache();
 
 export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
+  const [searchParams] = useSearchParams();
   const [bookingFilters, setBookingFilters] = useState({ status: '', parking: '', query: '' });
   const [error, setError] = useState('');
   const [editingParking, setEditingParking] = useState(null);
@@ -49,6 +51,15 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
   useEffect(() => {
     Promise.resolve().then(loadMine);
   }, [loadMine]);
+
+  // When arriving from the detail page via ?edit=<id>, pre-select that parking
+  // in the form as soon as the listings have loaded.
+  const editIdFromUrl = searchParams.get('edit');
+  useEffect(() => {
+    if (!editIdFromUrl || parkings.length === 0) return;
+    const target = parkings.find((p) => p.id === editIdFromUrl);
+    if (target) setEditingParking(target);
+  }, [editIdFromUrl, parkings]);
 
   async function handleCreate(payload, imageFiles = []) {
     setError('');
@@ -180,7 +191,11 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
           ) : (
             <div className="grid gap-3">
               {parkings.slice(0, 4).map((parking) => (
-                <article className="rounded-md border border-slate-200 p-4" key={parking.id}>
+                <Link
+                  className="block rounded-md border border-slate-200 p-4 transition hover:border-brand-300 hover:shadow-sm"
+                  key={parking.id}
+                  to={`/owner/parking/${parking.id}`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-slate-950">{parking.title}</p>
@@ -200,7 +215,7 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
                       {parking.verificationStatus}
                     </span>
                   </div>
-                </article>
+                </Link>
               ))}
             </div>
           )}
@@ -267,6 +282,13 @@ function OwnerListings({ editingParking, handleCreate, handleDelete, handleMedia
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                     Delete
                   </button>
+                  <Link
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                    to={`/owner/parking/${parking.id}`}
+                  >
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                    View
+                  </Link>
                 </div>
               </article>
             ))}
