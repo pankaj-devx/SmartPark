@@ -244,7 +244,16 @@ function ParkingResultCard({ bookingParams, parking, isAuthenticated, setAuthMod
             <Camera className="h-8 w-8" aria-hidden="true" />
           </div>
         )}
-        <p className="absolute right-3 top-3 rounded-md bg-white/95 px-3 py-1 text-sm font-semibold text-brand-700 shadow-sm">Rs {parking.hourlyPrice}/hr</p>
+        <p className="absolute right-3 top-3 rounded-md bg-white/95 px-3 py-1 text-sm font-semibold text-brand-700 shadow-sm">
+          {parking.pricing && Object.keys(parking.pricing).length > 0
+            ? (() => {
+                const rates = parking.vehicleTypes.map((t) => parking.pricing[t] ?? parking.hourlyPrice);
+                const min = Math.min(...rates);
+                const max = Math.max(...rates);
+                return min === max ? `Rs ${min}/hr` : `Rs ${min}–${max}/hr`;
+              })()
+            : `Rs ${parking.hourlyPrice}/hr`}
+        </p>
       </div>
       <div className="p-5">
       <div className="flex items-start justify-between gap-4">

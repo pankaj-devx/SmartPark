@@ -125,6 +125,14 @@ const parkingSchema = new mongoose.Schema(
       required: true,
       min: 1
     },
+    // Optional per-vehicle-type pricing.
+    // Falls back to hourlyPrice when a vehicle type is not listed here.
+    // Stored as a plain object so it survives schema-less access.
+    pricing: {
+      type: Map,
+      of: Number,
+      default: undefined
+    },
     amenities: {
       type: [String],
       enum: ['covered', 'cctv', 'ev charging', 'security', 'valet', 'accessible'],

@@ -3,7 +3,7 @@ import { CalendarCheck, X } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { createBooking } from './bookingApi.js';
 import { getBookingSubmitPlan } from './bookingIntent.js';
-import { calculateEstimatedTotal, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
+import { calculateEstimatedTotal, formatDuration, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
 
 export function BookingModal({ initialValues = {}, isAuthenticated = false, onClose, onRequireAuth, onSuccess, parking }) {
   const [form, setForm] = useState(() => {
@@ -25,22 +25,28 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
   const durationHours = getBookingDurationHours(form.startTime, form.endTime);
 
-  // Inline time error: shown as soon as both times are filled but the range is wrong.
-  // Derived from state — no submit required to see it.
+  // Inline time error: same time = zero duration
   const timeRangeError =
-    form.startTime && form.endTime && durationHours === 0
-      ? 'End time must be after start time.'
+    form.startTime && form.endTime && form.startTime === form.endTime
+      ? 'Start and end time cannot be the same.'
       : '';
+
+  // Effective hourly rate for the selected vehicle type
+  const effectiveRate = (form.vehicleType && parking.pricing?.[form.vehicleType])
+    ? parking.pricing[form.vehicleType]
+    : parking.hourlyPrice;
 
   const estimatedTotal = useMemo(
     () =>
       calculateEstimatedTotal({
         endTime: form.endTime,
         hourlyPrice: parking.hourlyPrice,
+        pricing: parking.pricing,
         slotCount: form.slotCount,
-        startTime: form.startTime
+        startTime: form.startTime,
+        vehicleType: form.vehicleType
       }),
-    [form.endTime, form.slotCount, form.startTime, parking.hourlyPrice]
+    [form.endTime, form.slotCount, form.startTime, form.vehicleType, parking.hourlyPrice, parking.pricing]
   );
 
   function updateField(event) {
@@ -159,12 +165,17 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
                   value={
                     durationHours === null
                       ? 'Select times'
-                      : durationHours === 0
-                        ? '—'
-                        : `${durationHours} hour${durationHours === 1 ? '' : 's'}`
+                      : formatDuration(durationHours)
                   }
                 />
-                <SummaryItem label="Hourly rate" value={`Rs ${parking.hourlyPrice}`} />
+                <SummaryItem
+                  label="Hourly rate"
+                  value={
+                    form.vehicleType
+                      ? `Rs ${effectiveRate}/hr (${form.vehicleType})`
+                      : `Rs ${parking.hourlyPrice}/hr`
+                  }
+                />
                 <SummaryItem label="Estimated total" value={`Rs ${estimatedTotal}`} />
               </dl>
             </div>

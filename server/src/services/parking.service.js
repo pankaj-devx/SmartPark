@@ -19,6 +19,7 @@ const PARKING_LIST_PROJECTION = {
   availableSlots: 1,
   vehicleTypes: 1,
   hourlyPrice: 1,
+  pricing: 1,
   amenities: 1,
   parkingType: 1,
   isOpen24x7: 1,
@@ -65,6 +66,9 @@ export function serializeParking(parking) {
     availableSlots: parking.availableSlots,
     vehicleTypes: parking.vehicleTypes,
     hourlyPrice: parking.hourlyPrice,
+    // pricing is a Mongoose Map — convert to a plain object for JSON serialization.
+    // Undefined when not set (old listings) — clients fall back to hourlyPrice.
+    pricing: parking.pricing ? Object.fromEntries(parking.pricing) : undefined,
     amenities: parking.amenities,
     parkingType: parking.parkingType ?? 'lot',
     isOpen24x7: parking.isOpen24x7 ?? true,
@@ -102,6 +106,7 @@ export function buildParkingCreatePayload(input, ownerId) {
     availableSlots: input.totalSlots,
     vehicleTypes: input.vehicleTypes,
     hourlyPrice: input.hourlyPrice,
+    pricing: input.pricing ?? undefined,
     amenities: input.amenities ?? [],
     parkingType: input.parkingType ?? 'lot',
     isOpen24x7: input.isOpen24x7 ?? true,
@@ -502,6 +507,7 @@ function applyParkingUpdates(parking, input) {
     'availableSlots',
     'vehicleTypes',
     'hourlyPrice',
+    'pricing',
     'amenities',
     'parkingType',
     'isOpen24x7',

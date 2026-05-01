@@ -147,7 +147,21 @@ export function ParkingDetailPage() {
             </div>
 
             <aside className="app-card-muted rounded-lg">
-              <p className="app-heading text-2xl font-bold">Rs {parking.hourlyPrice}/hr</p>
+              {/* Pricing — show per-vehicle rates when available, else flat rate */}
+              {parking.pricing && Object.keys(parking.pricing).length > 0 ? (
+                <div>
+                  {parking.vehicleTypes.map((type) => (
+                    <p key={type} className="app-heading text-xl font-bold">
+                      Rs {parking.pricing[type] ?? parking.hourlyPrice}/hr
+                      <span className="ml-2 text-sm font-normal" style={{ color: 'var(--app-text-muted)' }}>
+                        ({type})
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="app-heading text-2xl font-bold">Rs {parking.hourlyPrice}/hr</p>
+              )}
               <div className="app-copy mt-4 grid gap-3 text-sm">
                 <p className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-brand-600" aria-hidden="true" />

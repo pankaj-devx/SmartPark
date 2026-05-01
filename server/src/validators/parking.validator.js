@@ -33,6 +33,13 @@ const parkingBaseSchema = z.object({
   totalSlots: z.coerce.number().int().positive(),
   vehicleTypes: z.array(vehicleTypeSchema).min(1),
   hourlyPrice: z.coerce.number().positive(),
+  // Optional per-vehicle pricing — falls back to hourlyPrice when absent
+  pricing: z
+    .object({
+      '2-wheeler': z.coerce.number().positive().optional(),
+      '4-wheeler': z.coerce.number().positive().optional()
+    })
+    .optional(),
   amenities: z.array(amenitySchema).default([]),
   parkingType: parkingTypeSchema.optional().default('lot'),
   isOpen24x7: z.coerce.boolean().optional().default(true),

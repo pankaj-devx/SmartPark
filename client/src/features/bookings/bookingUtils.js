@@ -11,19 +11,49 @@ export function getBookingDurationHours(startTime, endTime) {
   // Neither time entered yet — nothing to compute
   if (!startTime || !endTime) return null;
 
-  const durationMinutes = getMinutes(endTime) - getMinutes(startTime);
+  let durationMinutes = getMinutes(endTime) - getMinutes(startTime);
 
-  // Both times present but range is invalid
-  if (durationMinutes <= 0) return 0;
+  // Cross-day booking: end time is on the next day
+  if (durationMinutes <= 0) {
+    durationMinutes += 24 * 60;
+  }
 
-  return Math.ceil(durationMinutes / 60);
+  // Still zero after adjustment means same time — invalid
+  if (durationMinutes === 0) return 0;
+
+  return durationMinutes / 60; // exact hours (not ceiled) for display
 }
 
-export function calculateEstimatedTotal({ endTime, hourlyPrice, slotCount, startTime }) {
+/**
+ * Format a fractional hour count into a human-readable duration string.
+ * e.g. 1.5 → "1 hr 30 min"  |  25 → "1 day 1 hr"  |  0.5 → "30 min"
+ */
+export function formatDuration(hours) {
+  if (!hours || hours <= 0) return '—';
+
+  const totalMinutes = Math.round(hours * 60);
+  const days    = Math.floor(totalMinutes / (24 * 60));
+  const remMins = totalMinutes % (24 * 60);
+  const hrs     = Math.floor(remMins / 60);
+  const mins    = remMins % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+  if (hrs  > 0) parts.push(`${hrs} hr${hrs > 1 ? 's' : ''}`);
+  if (mins > 0) parts.push(`${mins} min`);
+
+  return parts.join(' ') || '—';
+}
+
+export function calculateEstimatedTotal({ endTime, hourlyPrice, pricing, slotCount, startTime, vehicleType }) {
   const hours = getBookingDurationHours(startTime, endTime);
-  // Return 0 for null (incomplete) or 0 (invalid range) — no negative totals
-  if (!hours) return 0;
-  return hours * Number(hourlyPrice || 0) * Number(slotCount || 0);
+  if (!hours || hours <= 0) return 0;
+
+  // Use vehicle-specific rate when available, fall back to hourlyPrice
+  const rate = (vehicleType && pricing?.[vehicleType]) ? pricing[vehicleType] : Number(hourlyPrice || 0);
+  const billableHours = Math.ceil(hours); // bill in whole hours
+
+  return billableHours * rate * Number(slotCount || 0);
 }
 
 export function validateBookingForm(form) {
@@ -49,9 +79,9 @@ export function validateBookingForm(form) {
     return 'Slot count must be at least 1.';
   }
 
-  // Compare as minutes so the check is numeric, not lexicographic
-  if (getMinutes(form.endTime) <= getMinutes(form.startTime)) {
-    return 'End time must be after start time.';
+  // Same time = zero duration — invalid
+  if (form.startTime === form.endTime) {
+    return 'End time must be different from start time.';
   }
 
   return '';

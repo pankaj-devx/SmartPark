@@ -148,7 +148,14 @@ function RecommendationCard({ parking, rank, isSelected, onSelect }) {
       {/* Stats row */}
       <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
         <span className="rounded-md bg-brand-50 px-2 py-0.5 font-semibold text-brand-700">
-          Rs {parking.hourlyPrice}/hr
+          {parking.pricing && Object.keys(parking.pricing).length > 0
+            ? (() => {
+                const rates = (parking.vehicleTypes ?? []).map((t) => parking.pricing[t] ?? parking.hourlyPrice);
+                const min = Math.min(...rates);
+                const max = Math.max(...rates);
+                return min === max ? `Rs ${min}/hr` : `Rs ${min}–${max}/hr`;
+              })()
+            : `Rs ${parking.hourlyPrice}/hr`}
         </span>
         {parking.distance != null ? (
           <span className="app-pill rounded-md px-2 py-0.5">

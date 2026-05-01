@@ -184,7 +184,17 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-slate-950">{parking.title}</p>
-                      <p className="mt-1 text-sm text-slate-600">{parking.city}, {parking.state}</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {parking.city}, {parking.state} ·{' '}
+                        {parking.pricing && Object.keys(parking.pricing).length > 0
+                          ? (() => {
+                              const rates = parking.vehicleTypes.map((t) => parking.pricing[t] ?? parking.hourlyPrice);
+                              const min = Math.min(...rates);
+                              const max = Math.max(...rates);
+                              return min === max ? `Rs ${min}/hr` : `Rs ${min}–${max}/hr`;
+                            })()
+                          : `Rs ${parking.hourlyPrice}/hr`}
+                      </p>
                     </div>
                     <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
                       {parking.verificationStatus}
@@ -233,7 +243,14 @@ function OwnerListings({ editingParking, handleCreate, handleDelete, handleMedia
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h3 className="font-semibold text-slate-950">{parking.title}</h3>
-                    <p className="mt-1 text-sm text-slate-600">{parking.city}, {parking.state} - Rs {parking.hourlyPrice}/hr</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {parking.city}, {parking.state} ·{' '}
+                      {parking.pricing && Object.keys(parking.pricing).length > 0
+                        ? parking.vehicleTypes
+                            .map((t) => `Rs ${parking.pricing[t] ?? parking.hourlyPrice}/hr (${t})`)
+                            .join(' · ')
+                        : `Rs ${parking.hourlyPrice}/hr`}
+                    </p>
                   </div>
                   <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
                     {parking.verificationStatus === 'pending' ? 'pending review' : parking.verificationStatus}

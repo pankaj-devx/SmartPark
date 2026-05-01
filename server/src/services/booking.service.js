@@ -35,8 +35,10 @@ export function buildBookingOverlapFilter(input) {
 export function calculateTotalAmount(parking, input) {
   const durationMinutes = getMinutes(input.endTime) - getMinutes(input.startTime);
   const billableHours = Math.ceil(durationMinutes / 60);
+  // Use vehicle-specific rate when available, fall back to hourlyPrice
+  const rate = parking.pricing?.get?.(input.vehicleType) ?? parking.pricing?.[input.vehicleType] ?? parking.hourlyPrice;
 
-  return billableHours * parking.hourlyPrice * input.slotCount;
+  return billableHours * rate * input.slotCount;
 }
 
 export async function createBooking(input, user, deps = {}) {

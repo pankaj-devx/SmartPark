@@ -18,6 +18,9 @@ const emptyForm = {
   lng: '',
   totalSlots: '',
   hourlyPrice: '',
+  // Per-vehicle pricing — empty string means "use hourlyPrice fallback"
+  price2Wheeler: '',
+  price4Wheeler: '',
   vehicleTypes: ['4-wheeler'],
   amenities: [],
   parkingType: 'lot',
@@ -64,7 +67,7 @@ export function ParkingForm({ initialParking = null, onCancel, onMediaChange, on
     <form className="grid gap-4" onSubmit={handleSubmit}>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Title" name="title" onChange={updateField} required value={form.title} />
-        <Field label="Hourly price" min="1" name="hourlyPrice" onChange={updateField} required type="number" value={form.hourlyPrice} />
+      <Field label="Hourly price (default)" min="1" name="hourlyPrice" onChange={updateField} required type="number" value={form.hourlyPrice} />
       </div>
 
       <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -108,6 +111,43 @@ export function ParkingForm({ initialParking = null, onCancel, onMediaChange, on
       </div>
 
       <CheckboxGroup label="Vehicle types" options={vehicleOptions} selected={form.vehicleTypes} onToggle={(value) => toggleArrayField('vehicleTypes', value)} />
+
+      {/* Per-vehicle pricing — optional, overrides the default hourly price */}
+      {form.vehicleTypes.length > 0 ? (
+        <fieldset className="grid gap-3 rounded-md border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-medium text-slate-700">
+            Per-vehicle pricing <span className="font-normal text-slate-500">(optional — overrides default rate)</span>
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {form.vehicleTypes.includes('2-wheeler') ? (
+              <Field
+                label="2-wheeler price (Rs/hr)"
+                min="1"
+                name="price2Wheeler"
+                onChange={updateField}
+                placeholder={`Default: Rs ${form.hourlyPrice || '—'}/hr`}
+                type="number"
+                value={form.price2Wheeler}
+              />
+            ) : null}
+            {form.vehicleTypes.includes('4-wheeler') ? (
+              <Field
+                label="4-wheeler price (Rs/hr)"
+                min="1"
+                name="price4Wheeler"
+                onChange={updateField}
+                placeholder={`Default: Rs ${form.hourlyPrice || '—'}/hr`}
+                type="number"
+                value={form.price4Wheeler}
+              />
+            ) : null}
+          </div>
+          <p className="text-xs text-slate-500">
+            Leave blank to use the default hourly price for that vehicle type.
+          </p>
+        </fieldset>
+      ) : null}
+
       <CheckboxGroup label="Amenities" options={amenityOptions} selected={form.amenities} onToggle={(value) => toggleArrayField('amenities', value)} />
 
       <ListingImageUploader
@@ -186,6 +226,9 @@ function toFormState(parking) {
     lng: parking.coordinates.lng,
     totalSlots: parking.totalSlots,
     hourlyPrice: parking.hourlyPrice,
+    // Populate per-vehicle fields from existing pricing map
+    price2Wheeler: parking.pricing?.['2-wheeler'] ?? '',
+    price4Wheeler: parking.pricing?.['4-wheeler'] ?? '',
     vehicleTypes: parking.vehicleTypes,
     amenities: parking.amenities,
     parkingType: parking.parkingType ?? 'lot',
@@ -196,6 +239,17 @@ function toFormState(parking) {
 }
 
 function toPayload(form) {
+  // Build pricing map — only include vehicle types that have a valid price set
+  const pricing = {};
+  if (form.vehicleTypes.includes('2-wheeler') && form.price2Wheeler !== '') {
+    const v = Number(form.price2Wheeler);
+    if (v > 0) pricing['2-wheeler'] = v;
+  }
+  if (form.vehicleTypes.includes('4-wheeler') && form.price4Wheeler !== '') {
+    const v = Number(form.price4Wheeler);
+    if (v > 0) pricing['4-wheeler'] = v;
+  }
+
   return {
     title: form.title,
     description: form.description,
@@ -211,6 +265,8 @@ function toPayload(form) {
     },
     totalSlots: Number(form.totalSlots),
     hourlyPrice: Number(form.hourlyPrice),
+    // Only send pricing when at least one vehicle-specific rate is set
+    ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
     vehicleTypes: form.vehicleTypes,
     amenities: form.amenities,
     parkingType: form.parkingType,
