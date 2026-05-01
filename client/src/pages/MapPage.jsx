@@ -42,10 +42,13 @@ export function MapPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const hasMounted = useRef(false);
-  const radiusDebounceRef = useRef(null);  // T5: debounce radius changes
-  // Stores the confirmed GPS position independently of the map centre.
-  // center can be moved (deep-link, manual search) without corrupting routing.
-  const userLocationRef = useRef(null);
+  const radiusDebounceRef = useRef(null);
+  // Confirmed GPS position — single source of truth for routing and blue dot.
+  // State (not ref) so MapView and LandmarksPanel re-render when it changes.
+  const [userLocation, setUserLocation] = useState(null);
+  // Cancellation token for loadNearby — incremented on each new call so
+  // stale responses from superseded requests are silently discarded.
+  const nearbyRequestId = useRef(0);
 
   // ── Query-param deep-link (from "View on Map" on detail page) ────────────
   // Parsed once on mount. useMemo with [] guarantees a single evaluation
@@ -87,11 +90,15 @@ export function MapPage() {
 
   // ── Fetch nearby parkings ────────────────────────────────────────────────
   const loadNearby = useCallback(async (lat, lng, km = radiusKm) => {
+    // Assign a unique ID to this request. If a newer call starts before this
+    // one resolves, the stale response is discarded without touching state.
+    const requestId = ++nearbyRequestId.current;
+
     setError('');
     setIsLoading(true);
 
-    // Expand radius automatically if no results — max 2 retries
-    const radiiToTry = [km, 10, 20].filter((r, i, arr) => arr.indexOf(r) === i); // dedupe
+    // Expand radius automatically if no results — max 2 retries, deduped
+    const radiiToTry = [km, 10, 20].filter((r, i, arr) => arr.indexOf(r) === i);
 
     try {
       let results = [];
@@ -99,6 +106,8 @@ export function MapPage() {
 
       for (const radius of radiiToTry) {
         results = await getNearbyParking(lat, lng, radius);
+        // Discard if a newer request has already started
+        if (requestId !== nearbyRequestId.current) return;
         usedRadius = radius;
         if (results.length > 0) break;
       }
@@ -111,10 +120,13 @@ export function MapPage() {
         setError(`No parking within ${km} km. Showing results within ${usedRadius} km.`);
       }
     } catch (apiError) {
+      if (requestId !== nearbyRequestId.current) return;
       setError(getApiErrorMessage(apiError, 'Unable to load nearby parking. Please try again.'));
       setParkings([]);
     } finally {
-      setIsLoading(false);
+      if (requestId === nearbyRequestId.current) {
+        setIsLoading(false);
+      }
     }
   }, [radiusKm]);
 
@@ -151,10 +163,11 @@ export function MapPage() {
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
+        const gpsCoord = { lat, lng };
 
-        userLocationRef.current = { lat, lng }; // real GPS — used as route origin
+        setUserLocation(gpsCoord);   // single source of truth for routing
         setLocationStatus('granted');
-        setCenter({ lat, lng });
+        setCenter(gpsCoord);
         setManualLat(String(lat.toFixed(6)));
         setManualLng(String(lng.toFixed(6)));
         loadNearby(lat, lng);
@@ -198,16 +211,57 @@ export function MapPage() {
   }, [requestLocation, loadNearby, loadSmartRecommendations, radiusKm, deepLink]);
 
   // Auto-select the deep-linked parking once nearby results have loaded.
-  // Runs whenever `parkings` changes — exits immediately when no deep-link id.
+  // Only highlights the marker — does NOT attempt routing, because userLocation
+  // may not be available yet (GPS still in-flight). The user can click
+  // "Get directions" once location is granted.
   useEffect(() => {
     if (!deepLink?.id || parkings.length === 0) return;
 
     const target = parkings.find((p) => p.id === deepLink.id);
-    if (target && selectedParking?.id !== target.id) {
-      handleSelectParking(target);
-    }
+    if (!target || selectedParking?.id === target.id) return;
+
+    // Select without routing: set parking + landmarks, skip getRoute()
+    setSelectedParking(target);
+    setRouteData(null);
+    setRouteError('');
+    setLandmarks([]);
+    setLandmarksError('');
+    setIsLoadingLandmarks(true);
+    getNearbyLandmarks(target.latitude, target.longitude)
+      .then((results) => setLandmarks(Array.isArray(results) ? results : []))
+      .catch(() => setLandmarks([]))
+      .finally(() => setIsLoadingLandmarks(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parkings]); // intentionally omit handleSelectParking — stable function ref
+  }, [parkings]); // deepLink is stable (useMemo []); selectedParking intentionally omitted
+
+  // Auto-route effect — fires when userLocation becomes available while a
+  // parking is already selected (covers the deep-link case: parking selected
+  // first, GPS resolves later). Skips if a route already exists or is loading.
+  useEffect(() => {
+    if (!userLocation || !selectedParking || routeData || isRouting) return;
+
+    const isSameLocation =
+      Math.abs(userLocation.lat - selectedParking.latitude)  < 0.0001 &&
+      Math.abs(userLocation.lng - selectedParking.longitude) < 0.0001;
+
+    if (isSameLocation) return; // already there — no route needed
+
+    setIsRouting(true);
+    setRouteError('');
+
+    getRoute(
+      { lat: userLocation.lat, lng: userLocation.lng },
+      { lat: selectedParking.latitude, lng: selectedParking.longitude }
+    )
+      .then((result) => setRouteData(result))
+      .catch(() => setRouteError(
+        'Could not calculate a driving route. You can still open it in Google Maps.'
+      ))
+      .finally(() => setIsRouting(false));
+  // userLocation is the trigger — selectedParking/routeData/isRouting are
+  // guards read at call time, not reactive dependencies.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation]);
 
   // ── Manual search ────────────────────────────────────────────────────────
   function handleManualSearch(event) {
@@ -276,16 +330,12 @@ export function MapPage() {
       .catch(() => setLandmarks([]))   // silent failure — panel shows empty state
       .finally(() => setIsLoadingLandmarks(false));
 
-    // Route origin: always the real GPS position, never the map centre.
-    // This prevents deep-link arrivals from producing a 0 km route.
-    const origin = userLocationRef.current;
+    // Route origin: always the confirmed GPS position, never the map centre.
+    const origin = userLocation;
 
-    if (!origin) {
-      setRouteError(
-        'Enable location to get directions. Click "Use my location" above, or open in Google Maps.'
-      );
-      return;
-    }
+    // No location yet — the auto-route effect will fire once GPS resolves.
+    // Don't set a routeError here; the panel shows the inline prompt instead.
+    if (!origin) return;
 
     // Guard: origin and destination are the same point — no route needed
     const isSameLocation =
@@ -329,7 +379,7 @@ export function MapPage() {
     if (!selectedParking) return;
     const url = buildGoogleMapsUrl(
       { lat: selectedParking.latitude, lng: selectedParking.longitude },
-      userLocationRef.current  // null when GPS was never granted — Google Maps handles it
+      userLocation  // null when GPS was never granted — Google Maps handles it
     );
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -472,7 +522,7 @@ export function MapPage() {
             parkings={parkings}
             zoom={mapZoom}
             routeData={routeData}
-            userLocation={center}
+            userLocation={userLocation}
             onSelectParking={handleSelectParking}
             selectedParking={selectedParking}
             recommendedParkings={recommendations}
@@ -520,7 +570,24 @@ export function MapPage() {
                 </div>
               ) : null}
 
-              {/* Route error — non-fatal */}
+              {/* No location yet — prompt user to enable GPS */}
+              {!userLocation && !isRouting && !routeData ? (
+                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
+                  <p className="text-xs text-blue-800">
+                    Enable location to get directions.
+                  </p>
+                  <button
+                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                    onClick={requestLocation}
+                    type="button"
+                  >
+                    <LocateFixed className="h-3 w-3" aria-hidden="true" />
+                    Use my location
+                  </button>
+                </div>
+              ) : null}
+
+              {/* Route error — non-fatal (API failure, same-location, etc.) */}
               {routeError ? (
                 <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {routeError}
@@ -579,7 +646,7 @@ export function MapPage() {
               isLoading={isLoadingLandmarks}
               error={landmarksError}
               parkingName={selectedParking.title}
-              userLocation={center}
+              userLocation={userLocation}
             />
           ) : null}
 
@@ -623,6 +690,7 @@ export function MapPage() {
                   parking={parking}
                   isSelected={selectedParking?.id === parking.id}
                   onGetDirections={handleSelectParking}
+                  hasLocation={!!userLocation}
                 />
               ))
             : null}
@@ -641,7 +709,7 @@ export function MapPage() {
 //   isSelected      - true when this parking is the active route destination
 //   onGetDirections - callback(parking) to trigger route drawing
 // ---------------------------------------------------------------------------
-function ParkingSidebarCard({ parking, isSelected = false, onGetDirections = null }) {
+function ParkingSidebarCard({ parking, isSelected = false, onGetDirections = null, hasLocation = false }) {
   return (
     <article
       className={`rounded-xl border p-4 transition ${isSelected ? 'border-blue-400 bg-blue-50' : 'hover:border-brand-300'}`}
@@ -675,16 +743,18 @@ function ParkingSidebarCard({ parking, isSelected = false, onGetDirections = nul
       </div>
 
       <div className="mt-3 grid gap-2">
-        {/* Get directions button */}
+        {/* Get directions — disabled until GPS is available */}
         {onGetDirections ? (
           <button
             className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${
               isSelected
                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                 : 'border hover:bg-slate-100'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+            disabled={!hasLocation && !isSelected}
             style={isSelected ? {} : { borderColor: 'var(--app-border-strong)', color: 'var(--app-text)' }}
             onClick={() => onGetDirections(parking)}
+            title={!hasLocation && !isSelected ? 'Enable location to get directions' : undefined}
             type="button"
           >
             <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
