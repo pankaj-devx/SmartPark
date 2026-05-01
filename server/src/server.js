@@ -14,9 +14,11 @@ dns.setDefaultResultOrder(
 }
 
 
+import { createServer } from 'http';
 import { app } from './app.js';
 import { connectDatabase } from './config/db.js';
 import { env } from './config/env.js';
+import { initSocket } from './config/socket.js';
 import { seedDefaultParkings } from './utils/seedDefaultParkings.js';
 
 
@@ -24,7 +26,11 @@ async function startServer() {
   await connectDatabase();
   await seedDefaultParkings();
 
-  app.listen(env.PORT, () => {
+  // Create a plain HTTP server so Socket.IO can share the same port
+  const httpServer = createServer(app);
+  initSocket(httpServer);
+
+  httpServer.listen(env.PORT, () => {
     console.log(`SmartPark API listening on port ${env.PORT}`);
   });
 }

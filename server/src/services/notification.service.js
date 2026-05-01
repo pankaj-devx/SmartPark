@@ -8,6 +8,7 @@
 
 import { Notification } from '../models/notification.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
+import { emitToUser } from '../config/socket.js';
 
 const MAX_NOTIFICATIONS_PER_USER = 50; // cap to keep the collection lean
 
@@ -43,6 +44,11 @@ export async function createNotification(userId, role, type, message, deps = {})
 
   const notification = await NotificationModel.create({ userId, role, type, message });
 
+  const serialized = serializeNotification(notification);
+
+  // Push to the user's socket(s) in real time — no-ops if they're offline
+  emitToUser(userId, 'new_notification', serialized);
+
   // Prune oldest read notification if over cap (best-effort, non-blocking)
   const count = await NotificationModel.countDocuments({ userId });
   if (count > MAX_NOTIFICATIONS_PER_USER) {
@@ -52,7 +58,7 @@ export async function createNotification(userId, role, type, message, deps = {})
     if (oldest) await NotificationModel.deleteOne({ _id: oldest._id });
   }
 
-  return serializeNotification(notification);
+  return serialized;
 }
 
 /**

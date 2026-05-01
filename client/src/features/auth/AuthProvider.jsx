@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient, clearAuthToken, setAuthToken } from '../../lib/apiClient.js';
+import { connect, disconnect } from '../../services/socket.js';
 import { AuthContext } from './AuthContext.js';
 
 const STORAGE_KEY = 'smartpark_auth';
@@ -26,6 +27,15 @@ export function AuthProvider({ children }) {
       localStorage.removeItem(STORAGE_KEY);
     }
   }, [auth]);
+
+  // Connect / disconnect the real-time socket when auth changes
+  useEffect(() => {
+    if (auth.user?._id) {
+      connect(auth.user._id);
+    } else {
+      disconnect();
+    }
+  }, [auth.user?._id]);
 
   useEffect(() => {
     let isMounted = true;

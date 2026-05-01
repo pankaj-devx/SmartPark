@@ -15,6 +15,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead
 } from './notificationService.js';
+import { offNotification, onNotification } from '../../services/socket.js';
 
 // How often to poll for new notifications (ms). Keeps the bell live without
 // websockets. Pauses automatically when the dropdown is open.
@@ -56,6 +57,21 @@ export function NotificationBell() {
     pollRef.current = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
   }, [isOpen, load]);
+
+  // Real-time: prepend incoming notifications without a full reload
+  useEffect(() => {
+    function handleNewNotification(notification) {
+      setNotifications((prev) => {
+        // Deduplicate — server may emit before the poll catches up
+        if (prev.some((n) => n.id === notification.id)) return prev;
+        return [notification, ...prev];
+      });
+      setUnreadCount((c) => c + 1);
+    }
+
+    onNotification(handleNewNotification);
+    return () => offNotification(handleNewNotification);
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
