@@ -32,7 +32,7 @@ export function ParkingListPage() {
   }, []);
 
   useEffect(() => {
-    Promise.resolve().then(() => loadParkings(initialFilters));
+    loadParkings(initialFilters);
   }, [loadParkings]);
 
   function updateFilter(event) {

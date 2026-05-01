@@ -47,7 +47,7 @@ export function MyBookingsPage() {
   }, []);
 
   useEffect(() => {
-    Promise.resolve().then(loadBookings);
+    loadBookings();
   }, [loadBookings]);
 
   async function confirmCancel() {

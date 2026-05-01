@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BadgeCheck, Bookmark, BookmarkCheck, Camera, Car, MapPin, Navigation, Search, Shield, Zap } from 'lucide-react';
 import { isSavedParking, recordRecentSearch, toggleSavedParking } from '../account/accountExperience.js';
@@ -22,7 +22,6 @@ export function SearchResultsPage() {
   const [pagination, setPagination] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [lastRequestKey, setLastRequestKey] = useState('');
   const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
   const { isAuthenticated } = useAuth();
   const searchParamsKey = searchParams.toString();
@@ -30,15 +29,17 @@ export function SearchResultsPage() {
 
   const activeChips = useMemo(() => buildChips(filters), [filters]);
 
+  const lastRequestKey = useRef('');
+
   const loadParkings = useCallback(async (nextFilters) => {
     const params = toApiParams(nextFilters);
     const requestKey = JSON.stringify(params);
 
-    if (requestKey === lastRequestKey) {
+    if (requestKey === lastRequestKey.current) {
       return;
     }
 
-    setLastRequestKey(requestKey);
+    lastRequestKey.current = requestKey;
     setError('');
     setIsLoading(true);
 
@@ -55,10 +56,10 @@ export function SearchResultsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [lastRequestKey]);
+  }, []);
 
   useEffect(() => {
-    Promise.resolve().then(() => loadParkings(urlFilters));
+    loadParkings(urlFilters);
   }, [loadParkings, urlFilters]);
 
   function patchFilters(patch) {

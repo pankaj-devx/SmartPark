@@ -8,30 +8,50 @@ export function getMinutes(value) {
 }
 
 export function getBookingDurationHours(startTime, endTime) {
+  // Neither time entered yet — nothing to compute
+  if (!startTime || !endTime) return null;
+
   const durationMinutes = getMinutes(endTime) - getMinutes(startTime);
 
-  if (durationMinutes <= 0) {
-    return 0;
-  }
+  // Both times present but range is invalid
+  if (durationMinutes <= 0) return 0;
 
   return Math.ceil(durationMinutes / 60);
 }
 
 export function calculateEstimatedTotal({ endTime, hourlyPrice, slotCount, startTime }) {
-  return getBookingDurationHours(startTime, endTime) * Number(hourlyPrice || 0) * Number(slotCount || 0);
+  const hours = getBookingDurationHours(startTime, endTime);
+  // Return 0 for null (incomplete) or 0 (invalid range) — no negative totals
+  if (!hours) return 0;
+  return hours * Number(hourlyPrice || 0) * Number(slotCount || 0);
 }
 
 export function validateBookingForm(form) {
-  if (!form.bookingDate || !form.startTime || !form.endTime || !form.vehicleType || !form.slotCount) {
-    return 'Complete all booking fields before reserving.';
+  const slots = Number(form.slotCount);
+
+  if (!form.bookingDate?.trim()) {
+    return 'Please select a booking date.';
   }
 
-  if (form.endTime <= form.startTime) {
-    return 'End time must be after start time.';
+  if (!form.startTime?.trim()) {
+    return 'Please select a start time.';
   }
 
-  if (Number(form.slotCount) < 1) {
+  if (!form.endTime?.trim()) {
+    return 'Please select an end time.';
+  }
+
+  if (!form.vehicleType?.trim()) {
+    return 'Please select a vehicle type.';
+  }
+
+  if (!Number.isFinite(slots) || slots < 1) {
     return 'Slot count must be at least 1.';
+  }
+
+  // Compare as minutes so the check is numeric, not lexicographic
+  if (getMinutes(form.endTime) <= getMinutes(form.startTime)) {
+    return 'End time must be after start time.';
   }
 
   return '';

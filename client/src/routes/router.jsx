@@ -5,6 +5,7 @@ import { RoleWorkspaceLayout } from '../app/RoleWorkspaceLayout.jsx';
 import { LoginPage } from '../features/auth/LoginPage.jsx';
 import { RegisterPage } from '../features/auth/RegisterPage.jsx';
 import { AdminDashboardPage } from '../features/admin/AdminDashboardPage.jsx';
+import { NotificationsPage } from '../features/notifications/NotificationsPage.jsx';
 import { OwnerParkingDashboard } from '../features/parkings/OwnerParkingDashboard.jsx';
 import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
 import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
@@ -22,6 +23,14 @@ export const router = createBrowserRouter([
       { path: 'parkings', element: <SearchResultsPage /> },
       { path: 'parkings/:id', element: <ParkingDetailPage /> },
       { path: 'map', element: <MapPage /> },
+      {
+        path: 'notifications',
+        element: (
+          <ProtectedRoute>
+            <NotificationsPage />
+          </ProtectedRoute>
+        )
+      },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       {

@@ -3,6 +3,7 @@ import { LogOut, Moon, ParkingCircle, SunMedium } from 'lucide-react';
 import { driverNavItems, getDefaultRouteForRole } from './navigation.js';
 import { useAuth } from '../features/auth/useAuth.js';
 import { useTheme } from '../features/theme/useTheme.js';
+import { NotificationBell } from '../features/notifications/NotificationBell.jsx';
 
 export function AppLayout() {
   const { isAuthenticated, logout, user } = useAuth();
@@ -74,6 +75,9 @@ export function AppLayout() {
 
             {isAuthenticated ? (
             <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--app-text-muted)' }}>
+              {/* Notification bell — visible to all authenticated users */}
+              <NotificationBell />
+
               {isWorkspaceRole ? (
                 <Link className="rounded-xl border px-3 py-2 font-semibold hover:bg-slate-100" style={{ borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }} to={getDefaultRouteForRole(user?.role)}>
                   {user?.role === 'admin' ? 'Admin workspace' : 'Owner workspace'}

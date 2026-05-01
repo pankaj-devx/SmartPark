@@ -6,18 +6,32 @@ import { getBookingSubmitPlan } from './bookingIntent.js';
 import { calculateEstimatedTotal, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
 
 export function BookingModal({ initialValues = {}, isAuthenticated = false, onClose, onRequireAuth, onSuccess, parking }) {
-  const [form, setForm] = useState(() => ({
-    bookingDate: initialValues.date ?? '',
-    startTime: initialValues.startTime ?? '',
-    endTime: initialValues.endTime ?? '',
-    vehicleType: initialValues.vehicleType ?? parking.vehicleTypes?.[0] ?? '',
-    slotCount: initialValues.slotCount ?? 1
-  }));
+  const [form, setForm] = useState(() => {
+    const types = parking.vehicleTypes ?? [];
+    return {
+      bookingDate: initialValues.date ?? '',
+      startTime: initialValues.startTime ?? '',
+      endTime: initialValues.endTime ?? '',
+      // Pre-select when there is exactly one option (unambiguous).
+      // For multiple options the user must choose explicitly; for zero options
+      // (data not yet loaded) stay empty — the select will be empty anyway.
+      vehicleType: initialValues.vehicleType?.trim() || (types.length === 1 ? types[0] : ''),
+      slotCount: initialValues.slotCount ?? 1
+    };
+  });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
 
   const durationHours = getBookingDurationHours(form.startTime, form.endTime);
+
+  // Inline time error: shown as soon as both times are filled but the range is wrong.
+  // Derived from state — no submit required to see it.
+  const timeRangeError =
+    form.startTime && form.endTime && durationHours === 0
+      ? 'End time must be after start time.'
+      : '';
+
   const estimatedTotal = useMemo(
     () =>
       calculateEstimatedTotal({
@@ -30,6 +44,7 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
   );
 
   function updateField(event) {
+    setError('');
     setForm((current) => ({
       ...current,
       [event.target.name]: event.target.value
@@ -108,11 +123,26 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               <Field label="Start time" name="startTime" onChange={updateField} required type="time" value={form.startTime} />
               <Field label="End time" name="endTime" onChange={updateField} required type="time" value={form.endTime} />
             </div>
+            {timeRangeError ? (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {timeRangeError}
+              </p>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
                 Vehicle type
-                <select className="app-input" name="vehicleType" onChange={updateField} required value={form.vehicleType}>
-                  {parking.vehicleTypes.map((type) => (
+                <select
+                  className="app-input"
+                  name="vehicleType"
+                  onChange={updateField}
+                  required
+                  value={form.vehicleType}
+                >
+                  {/* Placeholder shown when no value is selected yet */}
+                  {!form.vehicleType ? (
+                    <option value="">Select vehicle type</option>
+                  ) : null}
+                  {(parking.vehicleTypes ?? []).map((type) => (
                     <option key={type} value={type}>
                       {type}
                     </option>
@@ -124,7 +154,16 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
             <div className="app-card-muted rounded-lg">
               <dl className="app-copy grid gap-2 text-sm">
-                <SummaryItem label="Duration" value={durationHours ? `${durationHours} hour${durationHours === 1 ? '' : 's'}` : 'Select time'} />
+                <SummaryItem
+                  label="Duration"
+                  value={
+                    durationHours === null
+                      ? 'Select times'
+                      : durationHours === 0
+                        ? '—'
+                        : `${durationHours} hour${durationHours === 1 ? '' : 's'}`
+                  }
+                />
                 <SummaryItem label="Hourly rate" value={`Rs ${parking.hourlyPrice}`} />
                 <SummaryItem label="Estimated total" value={`Rs ${estimatedTotal}`} />
               </dl>
