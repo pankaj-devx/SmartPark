@@ -1,133 +1,133 @@
-# 🚗 SmartPark — Smart Parking Management System
+# 🚗 SmartPark — Intelligent Parking Management Platform
 
-SmartPark is a full-stack parking management platform that helps users **find, book, and navigate to parking spaces** in real time.
-
-It is designed as a **real-world scalable system** with location intelligence, booking logic, and role-based access.
+SmartPark is a full-stack smart parking marketplace that enables **drivers to find and book parking**, **owners to manage spaces**, and **admins to control the system** — all powered by real-time updates and location intelligence.
 
 ---
 
-## 🌍 Live Features (Current)
+# 🌟 Key Features
 
-### 🔐 Authentication & Roles
+## 👤 Driver (User)
 
-* User (Driver)
-* Parking Owner
-* Admin
-* Secure login using JWT
-
----
-
-### 🅿️ Parking Management
-
-* Owners can add, update, and delete parking listings
-* Includes:
-
-  * Address
-  * Price
-  * Slot count
-  * Vehicle type
-  * Availability
+* 🔍 Search nearby parking based on location
+* 🗺️ Interactive map with live parking markers
+* 🧭 Navigation with route, distance & ETA
+* ⭐ Smart parking recommendations
+* 📍 Nearby landmarks (cafes, hospitals, etc.)
+* 📅 Book parking slots (multi-day supported)
+* 🚘 Vehicle-based pricing (2-wheeler / 4-wheeler)
+* 🔔 Real-time booking notifications
+* 📄 View booking history
 
 ---
 
-### 🔍 Smart Search & Filters
+## 🏢 Parking Owner
 
-* Search parking by:
-
-  * Location
-  * Vehicle type
-  * Availability
-* Clean and fast filtering system
-
----
-
-### 📄 Parking Details
-
-* Full parking info page
-* Includes:
-
-  * Pricing
-  * Availability
-  * Location
-  * Booking option
+* ➕ Create and manage parking listings
+* 💰 Set different pricing for vehicle types
+* 📊 Manage parking availability & slots
+* 📄 View individual parking details *(in progress)*
+* 🔔 Receive real-time booking alerts
 
 ---
 
-### 📅 Booking System
+## 🛠️ Admin Panel
 
-* Reserve parking slots
-* Prevents double booking
-* Booking status:
-
-  * Pending
-  * Confirmed
-  * Cancelled
+* 📋 View and manage all bookings
+* 👥 Monitor users and system activity *(in progress)*
+* 🅿️ Parking moderation system *(planned)*
+* 💬 Communication system *(planned)*
 
 ---
 
-## 🗺️ Phase 7A — Maps & Location Intelligence
+# 🧠 Core Capabilities
 
-* Detect user’s current location
-* Show nearby parking on map
-* Interactive markers using Leaflet
+* ⚡ Real-time system using Socket.IO
+* 🧭 Location-based discovery (Leaflet + OpenStreetMap)
+* 📊 Smart ranking (distance + price + availability)
+* 💰 Dynamic pricing per vehicle type
+* ⏱️ Multi-day & cross-day booking support
+* 🔄 Fault-tolerant architecture (API + real-time fallback)
+
+---
+
+# 🗺️ Phase Breakdown
+
+## Phase 7A — Maps & Location Intelligence
+
+* Detect user location
+* Show nearby parking markers
 * Map + list synchronization
 
+## Phase 7B — Routing & Navigation
+
+* Route from user → parking
+* Distance & ETA calculation
+* Polyline route visualization
+* Open in Google Maps
+
+## Phase 7C — Smart Intelligence
+
+* Nearby landmarks
+* Smart parking recommendations
+
+## Phase 8 — Notifications System
+
+* Booking confirmations
+* Real-time updates using Socket.IO
+
 ---
 
-## 🚗 Phase 7B — Routing & Navigation
+# 🏗️ Tech Stack
 
-* Route from user → selected parking
-* Distance and ETA calculation
-* Route visualization using polyline
-* Open in Google Maps navigation
-
----
-
-## 🧠 Tech Stack
-
-### Frontend
+## Frontend
 
 * React (Vite)
-* Leaflet + React Leaflet
-* Axios
+* Tailwind CSS
+* React Leaflet
 
-### Backend
+## Backend
 
 * Node.js
 * Express.js
 * MongoDB (Mongoose)
+* Socket.IO
 
-### APIs & Services
+## APIs & Services
 
-* OpenStreetMap (tiles)
-* OpenRouteService (routing API)
+* OpenStreetMap (map tiles)
+* OpenRouteService (routing)
+* Overpass API (nearby places)
 
 ---
 
-## 📁 Project Structure
+# 📂 Project Structure
 
 ```bash
 SmartPark/
 │
 ├── client/                # Frontend (React)
 │   ├── src/
-│   │   ├── features/map/  # Map & routing logic
+│   │   ├── features/
+│   │   │   ├── map/
+│   │   │   ├── bookings/
+│   │   │   ├── notifications/
+│   │   │   ├── parkings/
 │   │   ├── pages/
-│   │   ├── components/
 │   │   ├── services/
 │
 ├── server/                # Backend (Node.js)
 │   ├── models/
 │   ├── routes/
 │   ├── controllers/
+│   ├── services/
 │   ├── middleware/
 ```
 
 ---
 
-## ⚙️ Setup Instructions
+# ⚙️ Setup Instructions
 
-### 1. Clone Repository
+## 1. Clone Repository
 
 ```bash
 git clone https://github.com/your-username/SmartPark.git
@@ -136,29 +136,36 @@ cd SmartPark
 
 ---
 
-### 2. Install Dependencies
+## 2. Install Dependencies
 
 ```bash
-cd client
 npm install
-
-cd ../server
-npm install
+cd client && npm install
+cd ../server && npm install
 ```
 
 ---
 
-### 3. Environment Variables
+## 3. Environment Variables
 
-Create `.env` file inside `client/`:
+### Backend (`server/.env`)
 
 ```env
-VITE_ORS_API_KEY=your_openrouteservice_api_key
+PORT=5000
+MONGO_URI=your_mongodb_connection
+JWT_SECRET=your_secret
+ORS_API_KEY=your_openrouteservice_key
+```
+
+### Frontend (`client/.env`)
+
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
 ---
 
-### 4. Run Project
+## 4. Run Project
 
 ```bash
 # Run backend
@@ -172,7 +179,7 @@ npm run dev
 
 ---
 
-### 5. Open App
+## 5. Open App
 
 ```text
 http://localhost:5173
@@ -180,63 +187,69 @@ http://localhost:5173
 
 ---
 
-## 🧪 Testing Checklist
+# 🧪 Testing Checklist
 
-* [ ] Login / Register works
-* [ ] Add parking (owner)
-* [ ] Search parking
+* [ ] Authentication works (User / Owner / Admin)
+* [ ] Parking creation (owner)
+* [ ] Search & filtering
 * [ ] Booking system works
+* [ ] Vehicle-based pricing applied
+* [ ] Multi-day booking works
 * [ ] Map loads correctly
 * [ ] Nearby parking appears
 * [ ] Route draws on map
 * [ ] Distance & ETA displayed
+* [ ] Real-time notifications work
 
 ---
 
-## 🚀 Upcoming Features
+# 🚀 Upcoming Features
 
-### Phase 7C — Smart Map Intelligence
-
-* Nearby landmarks
-* Best parking suggestions
-* Demand heatmaps
-
-### Phase 8 — Notifications
-
-* Booking alerts
-* Real-time updates
-
-### Phase 9 — Payments
-
-* Payment gateway integration
+* 💬 Chat system (Driver ↔ Owner ↔ Admin)
+* 📊 Owner analytics (earnings, bookings)
+* ⭐ Ratings & reviews
+* 💳 Payment integration (Razorpay/Stripe)
+* 🛠️ Admin moderation panel
+* 🌐 Deployment (Vercel + Render)
 
 ---
 
-## 🎯 Project Vision
+# 🎯 Project Vision
 
-SmartPark aims to become a **real-world smart mobility solution**, combining:
+SmartPark aims to become a **real-world smart mobility platform**, combining:
 
 * Geospatial intelligence
-* Real-time booking systems
-* Scalable architecture
+* Real-time systems
+* Scalable marketplace architecture
 
 ---
 
-## 🤝 Contributing
+# 🤝 Contributing
 
-Pull requests are welcome.
-For major changes, please open an issue first.
+Contributions are welcome!
+
+```bash
+git checkout -b feature/your-feature
+git commit -m "feat: your feature"
+git push origin feature/your-feature
+```
 
 ---
 
-## 📌 Author
+# 📜 License
+
+MIT License
+
+---
+
+# 👨‍💻 Author
 
 **Pankaj**
-B.Tech AI & Data Science Student
-Passionate about building real-world applications 🚀
+B.Tech AI & Data Science
+Building real-world systems 🚀
 
 ---
 
-## ⭐ Support
+# ⭐ Support
 
 If you like this project, give it a star ⭐ on GitHub!
