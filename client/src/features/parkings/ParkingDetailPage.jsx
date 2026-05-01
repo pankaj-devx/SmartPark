@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, Map, MapPin, ShieldCheck } from 'lucide-react';
 import { BookingModal } from '../bookings/BookingModal.jsx';
 import { isSavedParking, recordRecentlyViewedParking, toggleSavedParking } from '../account/accountExperience.js';
 import { clearGuestBookingIntent, getGuestBookingIntent, saveGuestBookingIntent } from '../account/guestSession.js';
@@ -162,6 +162,19 @@ export function ParkingDetailPage() {
                 {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
                 {isSaved ? 'Saved to favorites' : 'Save parking'}
               </button>
+
+              {/* View on Map — only shown when coordinates are available */}
+              {parking.latitude != null && parking.longitude != null ? (
+                <Link
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-100"
+                  style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text-muted)' }}
+                  to={`/map?lat=${parking.latitude}&lng=${parking.longitude}&id=${parking.id}`}
+                >
+                  <Map className="h-4 w-4" aria-hidden="true" />
+                  View on Map
+                </Link>
+              ) : null}
+
               <button
                 className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
                 disabled={parking.availableSlots < 1}

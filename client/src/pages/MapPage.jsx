@@ -12,8 +12,8 @@
  * page, route, or component.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, LocateFixed, MapPin, Navigation, RefreshCw, Route, Search, X } from 'lucide-react';
 import { getNearbyParking } from '../features/map/mapService.js';
 import { getSmartParking } from '../features/map/mapSmartService.js';
@@ -35,11 +35,35 @@ export function MapPage() {
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
   const [manualLat, setManualLat] = useState('');       // manual input fields
   const [manualLng, setManualLng] = useState('');
+  const [manualLatError, setManualLatError] = useState('');  // T4: inline hints
+  const [manualLngError, setManualLngError] = useState('');
   const [locationStatus, setLocationStatus] = useState('idle');
   // 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable'
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const hasMounted = useRef(false);
+  const radiusDebounceRef = useRef(null);  // T5: debounce radius changes
+  // Stores the confirmed GPS position independently of the map centre.
+  // center can be moved (deep-link, manual search) without corrupting routing.
+  const userLocationRef = useRef(null);
+
+  // ── Query-param deep-link (from "View on Map" on detail page) ────────────
+  // Parsed once on mount. useMemo with [] guarantees a single evaluation
+  // and keeps the value inside the hook flow (no render-body side effects).
+  const [searchParams] = useSearchParams();
+  const deepLink = useMemo(() => {
+    const qLat = parseFloat(searchParams.get('lat') ?? '');
+    const qLng = parseFloat(searchParams.get('lng') ?? '');
+    const qId  = searchParams.get('id')?.trim() ?? '';
+    const valid =
+      !isNaN(qLat) && qLat >= -90 && qLat <= 90 &&
+      !isNaN(qLng) && qLng >= -180 && qLng <= 180;
+    return valid ? { lat: qLat, lng: qLng, id: qId } : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — read params once at mount, never re-parse
+
+  // Zoom level — elevated when arriving from a deep-link
+  const [mapZoom] = useState(deepLink ? 16 : 13);
 
   // ── Routing state ────────────────────────────────────────────────────────
   // selectedParking — the parking the user clicked "Get directions" on
@@ -128,6 +152,7 @@ export function MapPage() {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
+        userLocationRef.current = { lat, lng }; // real GPS — used as route origin
         setLocationStatus('granted');
         setCenter({ lat, lng });
         setManualLat(String(lat.toFixed(6)));
@@ -148,12 +173,41 @@ export function MapPage() {
     );
   }, [loadNearby, loadSmartRecommendations]);
 
-  // Auto-request location on first mount
+  // Auto-request location on first mount.
+  // Deep-link path: centre on the linked parking immediately and load nearby
+  // around it. Also silently attempt GPS so userLocationRef gets populated
+  // and routing becomes available — but only update center/data if GPS
+  // succeeds (handled inside requestLocation's success callback).
+  // Normal path: request GPS, load nearby on success/failure.
   useEffect(() => {
     if (hasMounted.current) return;
     hasMounted.current = true;
-    requestLocation();
-  }, [requestLocation]);
+
+    if (deepLink) {
+      setCenter({ lat: deepLink.lat, lng: deepLink.lng });
+      loadNearby(deepLink.lat, deepLink.lng, radiusKm);
+      loadSmartRecommendations(deepLink.lat, deepLink.lng);
+      // Attempt GPS in background — populates userLocationRef for routing.
+      // requestLocation will also call loadNearby/loadSmartRecommendations
+      // with the real GPS coords if granted, which is the desired behaviour
+      // (re-centres map on the user and refreshes results).
+      requestLocation();
+    } else {
+      requestLocation();
+    }
+  }, [requestLocation, loadNearby, loadSmartRecommendations, radiusKm, deepLink]);
+
+  // Auto-select the deep-linked parking once nearby results have loaded.
+  // Runs whenever `parkings` changes — exits immediately when no deep-link id.
+  useEffect(() => {
+    if (!deepLink?.id || parkings.length === 0) return;
+
+    const target = parkings.find((p) => p.id === deepLink.id);
+    if (target && selectedParking?.id !== target.id) {
+      handleSelectParking(target);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parkings]); // intentionally omit handleSelectParking — stable function ref
 
   // ── Manual search ────────────────────────────────────────────────────────
   function handleManualSearch(event) {
@@ -162,24 +216,37 @@ export function MapPage() {
     const lat = parseFloat(manualLat);
     const lng = parseFloat(manualLng);
 
-    if (isNaN(lat) || lat < -90 || lat > 90) {
-      setError('Latitude must be a number between -90 and 90.');
-      return;
-    }
+    // T4: inline validation — set field-level hints, do not call API
+    const latErr = (!manualLat.trim() || isNaN(lat) || lat < -90 || lat > 90)
+      ? 'Enter a valid latitude (−90 to 90).'
+      : '';
+    const lngErr = (!manualLng.trim() || isNaN(lng) || lng < -180 || lng > 180)
+      ? 'Enter a valid longitude (−180 to 180).'
+      : '';
 
-    if (isNaN(lng) || lng < -180 || lng > 180) {
-      setError('Longitude must be a number between -180 and 180.');
-      return;
-    }
+    setManualLatError(latErr);
+    setManualLngError(lngErr);
+
+    if (latErr || lngErr) return;
 
     setCenter({ lat, lng });
     loadNearby(lat, lng, radiusKm);
-    loadSmartRecommendations(lat, lng); // Phase 7C
+    loadSmartRecommendations(lat, lng);
   }
 
   // ── Derived UI state ─────────────────────────────────────────────────────
   const mapCenter = center; // always defined — starts at FALLBACK_CENTER
   const showManualForm = locationStatus === 'denied' || locationStatus === 'unavailable';
+
+  // T5: debounced radius change — prevents rapid-fire API calls when user
+  // clicks the select multiple times quickly
+  function handleRadiusChange(km) {
+    setRadiusKm(km);
+    clearTimeout(radiusDebounceRef.current);
+    radiusDebounceRef.current = setTimeout(() => {
+      loadNearby(center.lat, center.lng, km);
+    }, 400);
+  }
 
   // ── Route handling ───────────────────────────────────────────────────────
 
@@ -206,14 +273,27 @@ export function MapPage() {
     setIsLoadingLandmarks(true);
     getNearbyLandmarks(parking.latitude, parking.longitude)
       .then((results) => setLandmarks(Array.isArray(results) ? results : []))
-      .catch(() => setLandmarksError('Could not load nearby places.'))
+      .catch(() => setLandmarks([]))   // silent failure — panel shows empty state
       .finally(() => setIsLoadingLandmarks(false));
 
-    // Need the user's location as the route origin
-    if (!center || locationStatus === 'denied' || locationStatus === 'unavailable') {
+    // Route origin: always the real GPS position, never the map centre.
+    // This prevents deep-link arrivals from producing a 0 km route.
+    const origin = userLocationRef.current;
+
+    if (!origin) {
       setRouteError(
-        'Your location is needed to draw a route. Use "Use my location" above, or enter coordinates manually.'
+        'Enable location to get directions. Click "Use my location" above, or open in Google Maps.'
       );
+      return;
+    }
+
+    // Guard: origin and destination are the same point — no route needed
+    const isSameLocation =
+      Math.abs(origin.lat - parking.latitude)  < 0.0001 &&
+      Math.abs(origin.lng - parking.longitude) < 0.0001;
+
+    if (isSameLocation) {
+      setRouteError('You are already at this location.');
       return;
     }
 
@@ -221,7 +301,7 @@ export function MapPage() {
 
     try {
       const result = await getRoute(
-        { lat: center.lat, lng: center.lng },
+        { lat: origin.lat, lng: origin.lng },
         { lat: parking.latitude, lng: parking.longitude }
       );
       setRouteData(result);
@@ -249,7 +329,7 @@ export function MapPage() {
     if (!selectedParking) return;
     const url = buildGoogleMapsUrl(
       { lat: selectedParking.latitude, lng: selectedParking.longitude },
-      locationStatus === 'granted' ? center : null
+      userLocationRef.current  // null when GPS was never granted — Google Maps handles it
     );
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -285,11 +365,7 @@ export function MapPage() {
           Search radius
           <select
             className="app-input text-sm"
-            onChange={(e) => {
-              const km = Number(e.target.value);
-              setRadiusKm(km);
-              if (center) loadNearby(center.lat, center.lng, km);
-            }}
+            onChange={(e) => handleRadiusChange(Number(e.target.value))}
             value={radiusKm}
           >
             <option value={1}>1 km</option>
@@ -329,24 +405,30 @@ export function MapPage() {
           <label className="grid gap-1 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
             Latitude
             <input
-              className="app-input text-sm"
-              onChange={(e) => setManualLat(e.target.value)}
+              className={`app-input text-sm ${manualLatError ? 'border-red-400' : ''}`}
+              onChange={(e) => { setManualLat(e.target.value); setManualLatError(''); }}
               placeholder="e.g. 19.0596"
               type="number"
               step="any"
               value={manualLat}
             />
+            {manualLatError ? (
+              <span className="text-xs text-red-500">{manualLatError}</span>
+            ) : null}
           </label>
           <label className="grid gap-1 text-sm font-medium" style={{ color: 'var(--app-text-muted)' }}>
             Longitude
             <input
-              className="app-input text-sm"
-              onChange={(e) => setManualLng(e.target.value)}
+              className={`app-input text-sm ${manualLngError ? 'border-red-400' : ''}`}
+              onChange={(e) => { setManualLng(e.target.value); setManualLngError(''); }}
               placeholder="e.g. 72.8656"
               type="number"
               step="any"
               value={manualLng}
             />
+            {manualLngError ? (
+              <span className="text-xs text-red-500">{manualLngError}</span>
+            ) : null}
           </label>
           <button
             className="self-end inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
@@ -388,7 +470,7 @@ export function MapPage() {
           <MapView
             center={mapCenter}
             parkings={parkings}
-            zoom={13}
+            zoom={mapZoom}
             routeData={routeData}
             userLocation={center}
             onSelectParking={handleSelectParking}
@@ -526,9 +608,9 @@ export function MapPage() {
               style={{ borderColor: 'var(--app-border-strong)', background: 'var(--app-surface-muted)' }}
             >
               <MapPin className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
-              <p className="app-heading mt-3 font-semibold">No parking found</p>
+              <p className="app-heading mt-3 font-semibold">No parking found nearby</p>
               <p className="app-copy mt-2 text-sm">
-                Try increasing the search radius or searching a different location.
+                Try increasing the search radius or searching another area.
               </p>
             </div>
           ) : null}
