@@ -13,6 +13,7 @@ import { healthRoutes } from './routes/health.routes.js';
 import { notificationRoutes } from './routes/notification.routes.js';
 import { ownerRoutes } from './routes/owner.routes.js';
 import { parkingRoutes } from './routes/parking.routes.js';
+import { reviewRoutes } from './routes/review.routes.js';
 import { searchRoutes } from './routes/search.routes.js';
 
 export const app = express();
@@ -42,6 +43,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/parkings', parkingRoutes);
+app.use('/api/reviews', reviewRoutes);
 app.use('/api/search', searchRoutes);
 
 app.use(notFoundHandler);

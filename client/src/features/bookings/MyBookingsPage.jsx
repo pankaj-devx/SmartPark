@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Car, Clock, IndianRupee, MapPin, ParkingCircle, RotateCcw, X } from 'lucide-react';
+import { CalendarDays, Car, Clock, IndianRupee, MapPin, ParkingCircle, RotateCcw, Star, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from '../parkings/parkingApi.js';
@@ -10,6 +10,8 @@ import {
   getComputedStatus,
   groupBookingsByStatus
 } from './bookingUtils.js';
+import { fetchReviewedBookingIds } from '../reviews/reviewApi.js';
+import { ReviewForm } from '../reviews/ReviewForm.jsx';
 
 // Status badge styles — keyed by computedStatus
 const statusConfig = {
@@ -36,6 +38,8 @@ export function MyBookingsPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [reviewTarget, setReviewTarget] = useState(null);
+  const [reviewedBookingIds, setReviewedBookingIds] = useState(new Set());
 
   const groupedBookings = useMemo(() => groupBookingsByStatus(bookings), [bookings]);
 
@@ -56,7 +60,23 @@ export function MyBookingsPage() {
         })
       );
       const parkingMap = Object.fromEntries(parkingPairs);
-      setBookings(bookingRows.map((b) => ({ ...b, parkingDetail: parkingMap[b.parking] })));
+      const enriched = bookingRows.map((b) => ({ ...b, parkingDetail: parkingMap[b.parking] }));
+      setBookings(enriched);
+
+      // Check which completed bookings already have a review.
+      // Include both DB-completed and time-expired (computedStatus) bookings.
+      const completedIds = enriched
+        .filter((b) => b.status === 'completed' || b.computedStatus === 'completed')
+        .map((b) => b.id);
+
+      if (completedIds.length > 0) {
+        try {
+          const reviewed = await fetchReviewedBookingIds(completedIds);
+          setReviewedBookingIds(new Set(reviewed));
+        } catch {
+          // Non-critical — silently ignore
+        }
+      }
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to load your bookings'));
     } finally {
@@ -135,6 +155,8 @@ export function MyBookingsPage() {
           <BookingGroup
             bookings={groupedBookings.completed}
             emptyHidden
+            onReview={setReviewTarget}
+            reviewedBookingIds={reviewedBookingIds}
             title="Completed"
             titleClass="text-slate-600"
           />
@@ -188,11 +210,24 @@ export function MyBookingsPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Review form modal */}
+      {reviewTarget ? (
+        <ReviewForm
+          booking={reviewTarget}
+          parking={reviewTarget.parkingDetail}
+          onClose={() => setReviewTarget(null)}
+          onSuccess={(review) => {
+            setReviewedBookingIds((current) => new Set([...current, review.booking ?? reviewTarget.id]));
+            setReviewTarget(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
 
-function BookingGroup({ bookings, emptyHidden = false, onCancel, title, titleClass = '' }) {
+function BookingGroup({ bookings, emptyHidden = false, onCancel, onReview, reviewedBookingIds = new Set(), title, titleClass = '' }) {
   if (emptyHidden && bookings.length === 0) return null;
 
   return (
@@ -209,7 +244,13 @@ function BookingGroup({ bookings, emptyHidden = false, onCancel, title, titleCla
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {bookings.map((booking) => (
-            <BookingCard booking={booking} key={booking.id} onCancel={onCancel} />
+            <BookingCard
+              booking={booking}
+              isReviewed={reviewedBookingIds.has(booking.id)}
+              key={booking.id}
+              onCancel={onCancel}
+              onReview={onReview}
+            />
           ))}
         </div>
       )}
@@ -217,10 +258,11 @@ function BookingGroup({ bookings, emptyHidden = false, onCancel, title, titleCla
   );
 }
 
-function BookingCard({ booking, onCancel }) {
+function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
   const parking = booking.parkingDetail;
   const computedStatus = getComputedStatus(booking);
   const isUpcoming = computedStatus === 'upcoming';
+  const isCompleted = computedStatus === 'completed' || booking.status === 'completed';
 
   return (
     <article className="flex flex-col rounded-xl border bg-white shadow-sm" style={{ borderColor: 'var(--app-border)' }}>
@@ -300,6 +342,23 @@ function BookingCard({ booking, onCancel }) {
             <X className="h-3.5 w-3.5" aria-hidden="true" />
             Cancel
           </button>
+        ) : null}
+        {isCompleted && onReview ? (
+          isReviewed ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-500">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+              Reviewed
+            </span>
+          ) : (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100"
+              onClick={() => onReview(booking)}
+              type="button"
+            >
+              <Star className="h-3.5 w-3.5" aria-hidden="true" />
+              Leave review
+            </button>
+          )
         ) : null}
       </div>
     </article>

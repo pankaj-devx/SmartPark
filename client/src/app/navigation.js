@@ -29,6 +29,7 @@ export const ownerNavItems = [
   { label: 'Reservations', to: '/owner/reservations', icon: ClipboardList },
   { label: 'Occupancy', to: '/owner/occupancy', icon: BarChart3 },
   { label: 'Earnings', to: '/owner/earnings', icon: ReceiptText },
+  { label: 'Reviews', to: '/owner/reviews', icon: Bell },
   { label: 'Settings', to: '/owner/settings', icon: CircleUserRound }
 ];
 
@@ -38,6 +39,7 @@ export const adminNavItems = [
   { label: 'Approvals', to: '/admin/approvals', icon: ShieldCheck },
   { label: 'Bookings', to: '/admin/bookings', icon: ClipboardList },
   { label: 'Users', to: '/admin/users', icon: Users },
+  { label: 'Reviews', to: '/admin/reviews', icon: Bell },
   { label: 'Reports', to: '/admin/reports', icon: ReceiptText },
   { label: 'Settings', to: '/admin/settings', icon: CircleUserRound }
 ];

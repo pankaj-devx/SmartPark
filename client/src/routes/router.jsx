@@ -5,9 +5,12 @@ import { RoleWorkspaceLayout } from '../app/RoleWorkspaceLayout.jsx';
 import { LoginPage } from '../features/auth/LoginPage.jsx';
 import { RegisterPage } from '../features/auth/RegisterPage.jsx';
 import { AdminDashboardPage } from '../features/admin/AdminDashboardPage.jsx';
+import { AdminReviewsPanel } from '../features/reviews/AdminReviewsPanel.jsx';
+import { MyBookingsPage } from '../features/bookings/MyBookingsPage.jsx';
 import { NotificationsPage } from '../features/notifications/NotificationsPage.jsx';
 import { OwnerParkingDetail } from '../features/owner/OwnerParkingDetail.jsx';
 import { OwnerParkingDashboard } from '../features/parkings/OwnerParkingDashboard.jsx';
+import { OwnerReviewsPanel } from '../features/reviews/OwnerReviewsPanel.jsx';
 import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
 import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
 import { MapPage } from '../pages/MapPage.jsx';
@@ -40,7 +43,7 @@ export const router = createBrowserRouter([
         path: 'bookings',
         element: (
           <ProtectedRoute>
-            <DashboardRoute activeSection="bookings" />
+            <MyBookingsPage />
           </ProtectedRoute>
         )
       },
@@ -103,6 +106,7 @@ export const router = createBrowserRouter([
           { path: 'approvals', element: <AdminDashboardPage activeSection="approvals" /> },
           { path: 'bookings', element: <AdminDashboardPage activeSection="bookings" /> },
           { path: 'users', element: <AdminDashboardPage activeSection="users" /> },
+          { path: 'reviews', element: <AdminReviewsPanel /> },
           { path: 'reports', element: <AdminDashboardPage activeSection="reports" /> },
           { path: 'settings', element: <AdminDashboardPage activeSection="settings" /> },
           { path: 'profile', element: <Navigate replace to="/admin/settings" /> }
@@ -145,6 +149,7 @@ export const router = createBrowserRouter([
           { path: 'reservations', element: <OwnerParkingDashboard activeSection="reservations" /> },
           { path: 'occupancy', element: <OwnerParkingDashboard activeSection="occupancy" /> },
           { path: 'earnings', element: <OwnerParkingDashboard activeSection="earnings" /> },
+          { path: 'reviews', element: <OwnerReviewsPanel /> },
           { path: 'settings', element: <OwnerParkingDashboard activeSection="settings" /> },
           { path: 'profile', element: <Navigate replace to="/owner/settings" /> }
         ]

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, Map, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, Camera, Clock, Map, MapPin, ShieldCheck, Star } from 'lucide-react';
 import { BookingModal } from '../bookings/BookingModal.jsx';
 import { isSavedParking, recordRecentlyViewedParking, toggleSavedParking } from '../account/accountExperience.js';
 import { clearGuestBookingIntent, getGuestBookingIntent, saveGuestBookingIntent } from '../account/guestSession.js';
@@ -8,6 +8,9 @@ import { useAuth } from '../auth/useAuth.js';
 import { AuthModal } from '../auth/AuthModal.jsx';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { fetchParkingById } from './parkingApi.js';
+import { fetchParkingReviews } from '../reviews/reviewApi.js';
+import { RatingStars } from '../reviews/RatingStars.jsx';
+import { ReviewList } from '../reviews/ReviewList.jsx';
 
 export function ParkingDetailPage() {
   const { id } = useParams();
@@ -20,6 +23,7 @@ export function ParkingDetailPage() {
   const [isSaved, setIsSaved] = useState(false);
   const [bookingDraft, setBookingDraft] = useState(() => getGuestBookingIntent(id));
   const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
+  const [reviewData, setReviewData] = useState(null);
 
   useEffect(() => {
     async function loadParking() {
@@ -39,6 +43,19 @@ export function ParkingDetailPage() {
     }
 
     loadParking();
+  }, [id]);
+
+  useEffect(() => {
+    async function loadReviews() {
+      try {
+        const data = await fetchParkingReviews(id);
+        setReviewData(data);
+      } catch {
+        // Reviews are non-critical — silently ignore errors
+      }
+    }
+
+    loadReviews();
   }, [id]);
   function handleBookingSuccess(booking) {
     clearGuestBookingIntent(id);
@@ -137,7 +154,7 @@ export function ParkingDetailPage() {
                 </div>
               ) : null}
 
-                <div className="mt-6 flex flex-wrap gap-2">
+              <div className="mt-6 flex flex-wrap gap-2">
                 {parking.amenities.map((amenity) => (
                   <span className="app-pill rounded-md px-3 py-2 text-sm" key={amenity}>
                     {amenity}
@@ -171,6 +188,12 @@ export function ParkingDetailPage() {
                   <Clock className="h-4 w-4 text-brand-600" aria-hidden="true" />
                   {parking.isOpen24x7 ? 'Open 24x7' : `${parking.operatingHours.open} to ${parking.operatingHours.close}`}
                 </p>
+                {reviewData?.stats?.totalReviews > 0 ? (
+                  <p className="flex items-center gap-2">
+                    <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                    {reviewData.stats.averageRating} · {reviewData.stats.totalReviews} review{reviewData.stats.totalReviews === 1 ? '' : 's'}
+                  </p>
+                ) : null}
               </div>
               <button className="mt-4 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-100" onClick={handleToggleSaved} style={{ borderColor: 'var(--app-border-strong)', color: 'var(--app-text-muted)' }} type="button">
                 {isSaved ? <BookmarkCheck className="h-4 w-4 text-brand-700" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
@@ -198,6 +221,25 @@ export function ParkingDetailPage() {
                 Reserve slot
               </button>
             </aside>
+          </div>
+
+          {/* ── Reviews section ──────────────────────────────────────── */}
+          <div className="border-t p-6" style={{ borderColor: 'var(--app-border)' }}>
+            <div className="mb-4 flex items-center gap-3">
+              <h2 className="app-heading text-lg font-semibold">Reviews</h2>
+              {reviewData?.stats?.totalReviews > 0 ? (
+                <div className="flex items-center gap-2">
+                  <RatingStars rating={reviewData.stats.averageRating} size="h-4 w-4" showValue />
+                  <span className="text-sm text-slate-500">
+                    ({reviewData.stats.totalReviews} review{reviewData.stats.totalReviews === 1 ? '' : 's'})
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            <ReviewList
+              reviews={reviewData?.reviews ?? []}
+              emptyMessage="No reviews yet. Be the first to review after your visit."
+            />
           </div>
         </article>
       ) : null}
