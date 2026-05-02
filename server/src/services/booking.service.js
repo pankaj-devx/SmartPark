@@ -5,6 +5,38 @@ import { createHttpError } from '../utils/createHttpError.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
 
+/**
+ * Derive a time-aware display status for a booking.
+ *
+ * Cancelled/completed bookings keep their stored status.
+ * For active bookings (pending/confirmed) we compare the current time
+ * against the booking window so the UI can show "upcoming", "ongoing",
+ * or "completed" without a background job.
+ *
+ * bookingDate is stored as "YYYY-MM-DD", startTime/endTime as "HH:MM".
+ * We parse them in local server time (no UTC shift) so the window aligns
+ * with what the user entered.
+ */
+export function computeBookingStatus(booking) {
+  // Cancelled stays cancelled; stored "completed" stays completed.
+  if (booking.status === 'cancelled' || booking.status === 'completed') {
+    return booking.status;
+  }
+
+  try {
+    const now = new Date();
+    const start = new Date(`${booking.bookingDate}T${booking.startTime}:00`);
+    const end   = new Date(`${booking.bookingDate}T${booking.endTime}:00`);
+
+    if (now < start) return 'upcoming';
+    if (now >= start && now <= end) return 'ongoing';
+    return 'completed';
+  } catch {
+    // If date parsing fails for any reason, fall back to stored status.
+    return booking.status;
+  }
+}
+
 export function serializeBooking(booking) {
   return {
     id: booking._id.toString(),
@@ -17,6 +49,7 @@ export function serializeBooking(booking) {
     slotCount: booking.slotCount,
     totalAmount: booking.totalAmount,
     status: booking.status,
+    computedStatus: computeBookingStatus(booking),
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt
   };

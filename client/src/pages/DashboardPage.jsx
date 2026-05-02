@@ -14,6 +14,7 @@ import { fetchParkingById } from '../features/parkings/parkingApi.js';
 import { buildDiscoveryPath } from '../features/parkings/discoveryFilters.js';
 import { useAuth } from '../features/auth/useAuth.js';
 import { fetchMyBookings } from '../features/bookings/bookingApi.js';
+import { formatBookingDate, formatTime12h, getComputedStatus } from '../features/bookings/bookingUtils.js';
 import { getApiErrorMessage } from '../lib/getApiErrorMessage.js';
 import { ProfilePage } from './ProfilePage.jsx';
 
@@ -70,7 +71,10 @@ export function DashboardPage({ activeSection = 'overview' }) {
   const recentActivity = getRecentActivity();
 
   const upcomingBookings = useMemo(
-    () => bookings.filter((booking) => booking.status === 'confirmed' || booking.status === 'pending'),
+    () => bookings.filter((booking) => {
+      const s = getComputedStatus(booking);
+      return s === 'upcoming' || s === 'ongoing';
+    }),
     [bookings]
   );
   const recentBookings = useMemo(() => bookings.slice(0, 3), [bookings]);
@@ -185,7 +189,9 @@ function OverviewSection({ completionScore, isLoading, recentBookings, recentSea
                 {recentBookings.map((booking) => (
                   <article className="rounded-md border border-slate-200 p-4" key={booking.id}>
                     <p className="font-semibold text-slate-950">{booking.parkingDetail?.title ?? 'Parking listing'}</p>
-                    <p className="mt-1 text-sm text-slate-600">{booking.bookingDate} - {booking.startTime}-{booking.endTime}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {formatBookingDate(booking.bookingDate)} · {formatTime12h(booking.startTime)}–{formatTime12h(booking.endTime)}
+                    </p>
                     <Link className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to={buildQuickRebookLink(booking)}>
                       <Repeat2 className="h-4 w-4" aria-hidden="true" />
                       Quick rebook
@@ -235,32 +241,46 @@ function BookingsSection({ bookings, isLoading }) {
       {!isLoading && bookings.length === 0 ? <EmptyState description="Reserve a parking space to build your reservation history." title="No bookings yet" /> : null}
       {!isLoading && bookings.length > 0 ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          {bookings.map((booking) => (
-            <article className="rounded-lg border border-slate-200 p-5" key={booking.id}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-slate-950">{booking.parkingDetail?.title ?? 'Parking listing'}</p>
-                  <p className="mt-1 text-sm text-slate-600">{booking.bookingDate} - {booking.startTime}-{booking.endTime}</p>
+          {bookings.map((booking) => {
+            const computedStatus = getComputedStatus(booking);
+            const statusClass =
+              computedStatus === 'upcoming'  ? 'bg-blue-50 text-blue-700' :
+              computedStatus === 'ongoing'   ? 'bg-green-50 text-green-700' :
+              computedStatus === 'completed' ? 'bg-slate-100 text-slate-600' :
+              computedStatus === 'cancelled' ? 'bg-red-50 text-red-700' :
+              'bg-slate-100 text-slate-700';
+
+            return (
+              <article className="rounded-lg border border-slate-200 p-5" key={booking.id}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-slate-950">{booking.parkingDetail?.title ?? 'Parking listing'}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {formatBookingDate(booking.bookingDate)} · {formatTime12h(booking.startTime)}–{formatTime12h(booking.endTime)}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusClass}`}>
+                    {computedStatus}
+                  </span>
                 </div>
-                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-700">{booking.status}</span>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
-                <span className="rounded-md bg-slate-100 px-2 py-1">Rs {booking.totalAmount}</span>
-                <span className="rounded-md bg-slate-100 px-2 py-1">{booking.slotCount} slots</span>
-                <span className="rounded-md bg-slate-100 px-2 py-1">{booking.vehicleType}</span>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {booking.parkingDetail ? (
-                  <Link className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to={`/parkings/${booking.parkingDetail.id}`}>
-                    View parking
+                <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
+                  <span className="rounded-md bg-slate-100 px-2 py-1">₹{booking.totalAmount?.toLocaleString('en-IN')}</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1">{booking.slotCount} slot{booking.slotCount === 1 ? '' : 's'}</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 capitalize">{booking.vehicleType}</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {booking.parkingDetail ? (
+                    <Link className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to={`/parkings/${booking.parkingDetail.id}`}>
+                      View parking
+                    </Link>
+                  ) : null}
+                  <Link className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to={buildQuickRebookLink(booking)}>
+                    Quick rebook
                   </Link>
-                ) : null}
-                <Link className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" to={buildQuickRebookLink(booking)}>
-                  Quick rebook
-                </Link>
-              </div>
-            </article>
-          ))}
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : null}
     </Panel>
@@ -420,14 +440,26 @@ function EmptyState({ description, title }) {
 }
 
 function CompactBookingRow({ booking }) {
+  const computedStatus = getComputedStatus(booking);
+  const statusClass =
+    computedStatus === 'upcoming'  ? 'bg-blue-50 text-blue-700' :
+    computedStatus === 'ongoing'   ? 'bg-green-50 text-green-700' :
+    computedStatus === 'completed' ? 'bg-slate-100 text-slate-600' :
+    computedStatus === 'cancelled' ? 'bg-red-50 text-red-700' :
+    'bg-slate-100 text-slate-700';
+
   return (
     <article className="rounded-md border border-slate-200 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-semibold text-slate-950">{booking.parkingDetail?.title ?? 'Parking listing'}</p>
-          <p className="mt-1 text-sm text-slate-600">{booking.bookingDate} - {booking.startTime}-{booking.endTime}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {formatBookingDate(booking.bookingDate)} · {formatTime12h(booking.startTime)}–{formatTime12h(booking.endTime)}
+          </p>
         </div>
-        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-700">{booking.status}</span>
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusClass}`}>
+          {computedStatus}
+        </span>
       </div>
     </article>
   );

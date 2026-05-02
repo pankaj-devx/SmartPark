@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { adminRoutes } from './routes/admin.routes.js';
+import { analyticsRoutes } from './routes/analytics.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { bookingRoutes } from './routes/booking.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
@@ -35,6 +36,7 @@ app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.use('/api/health', healthRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/notifications', notificationRoutes);

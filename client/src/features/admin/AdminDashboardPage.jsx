@@ -1,8 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CircleSlash, ClipboardCheck, Search, XCircle } from 'lucide-react';
+import { BarChart3, CheckCircle2, CircleSlash, ClipboardCheck, Loader2, Search, XCircle } from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from 'recharts';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { useAuth } from '../auth/useAuth.js';
 import { ProfilePage } from '../../pages/ProfilePage.jsx';
+import { fetchAdminAnalytics } from '../analytics/analyticsApi.js';
 import {
   approveAdminParking,
   blockAdminUser,
@@ -187,8 +201,8 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
       {activeSection === 'bookings' ? <AdminBookings bookingSearch={bookingSearch} bookingStatus={bookingStatus} filteredBookings={filteredBookings} onCancel={handleCancelBooking} setBookingSearch={setBookingSearch} setBookingStatus={setBookingStatus} /> : null}
       {activeSection === 'users' ? <AdminUsers currentAdminId={currentUser?.id} filteredUsers={filteredUsers} onBlock={handleBlockUser} onUnblock={handleUnblockUser} search={userSearch} setSearch={setUserSearch} setUserRoleFilter={setUserRoleFilter} userMetrics={dashboard?.userMetrics} userRoleFilter={userRoleFilter} /> : null}
       {activeSection === 'reports' ? <AdminReports bookingMetrics={bookingMetrics} dashboard={dashboard} /> : null}
-      {activeSection === 'settings' ? <ProfilePage defaultTab="security" embedded showHeader={false} /> : null}
-    </section>
+      {activeSection === 'analytics' ? <AdminAnalytics /> : null}
+      {activeSection === 'settings' ? <ProfilePage defaultTab="security" embedded showHeader={false} /> : null}    </section>
   );
 }
 
@@ -434,6 +448,165 @@ function AdminReports({ bookingMetrics, dashboard }) {
           <GuideTile label="User population" text={`${dashboard?.userMetrics?.drivers ?? 0} drivers and ${dashboard?.userMetrics?.owners ?? 0} owners are represented in the current dataset.`} />
         </div>
       </Panel>
+    </div>
+  );
+}
+
+function AdminAnalytics() {
+  const [analytics, setAnalytics] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const data = await fetchAdminAnalytics();
+        if (import.meta.env.DEV) {
+          console.log('[AdminAnalytics] raw response:', data);
+          console.log('[AdminAnalytics] keys:', data ? Object.keys(data) : 'null');
+        }
+        if (isMounted) setAnalytics(data);
+      } catch (err) {
+        if (isMounted) setError(getApiErrorMessage(err, 'Unable to load analytics'));
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="mt-6 flex items-center gap-2 text-sm" style={{ color: 'var(--app-text-soft)' }}>
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading analytics…
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="mt-6 text-sm text-red-600">{error}</p>;
+  }
+
+  // Build flat arrays from the scalar counts returned by getAdminAnalytics().
+  // Each entry needs { name, value, fill } for Recharts.
+  // Do NOT filter out zero-value entries — removing items makes the chart
+  // disappear entirely and hides the panel from the DOM.
+  const totalAdmins = Math.max(
+    0,
+    (analytics?.totalUsers ?? 0) - (analytics?.totalDrivers ?? 0) - (analytics?.totalOwners ?? 0)
+  );
+
+  // Data shape: { name, value, fill } — fill is read by <Cell> per slice
+  const userRoleData = [
+    { name: 'Drivers', value: analytics?.totalDrivers ?? 0, fill: '#2563eb' },
+    { name: 'Owners',  value: analytics?.totalOwners  ?? 0, fill: '#16a34a' },
+    { name: 'Admins',  value: totalAdmins,                  fill: '#9333ea' }
+  ];
+
+  const parkingStatusData = [
+    { name: 'Approved', value: analytics?.approvedParkings ?? 0, fill: '#16a34a' },
+    { name: 'Pending',  value: analytics?.pendingParkings  ?? 0, fill: '#d97706' },
+    { name: 'Rejected', value: analytics?.rejectedParkings ?? 0, fill: '#dc2626' }
+  ];
+
+  if (import.meta.env.DEV) {
+    console.log('[AdminAnalytics] userRoleData:', userRoleData);
+    console.log('[AdminAnalytics] parkingStatusData:', parkingStatusData);
+  }
+
+  const hasUserData    = userRoleData.some((d) => d.value > 0);
+  const hasParkingData = parkingStatusData.some((d) => d.value > 0);
+
+  return (
+    <div className="mt-6 grid gap-6">
+      {/* Summary cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Total Users"       value={analytics?.totalUsers       ?? 0} />
+        <SummaryCard label="Total Bookings"    value={analytics?.totalBookings    ?? 0} />
+        <SummaryCard label="Approved Parkings" value={analytics?.approvedParkings ?? 0} />
+        <SummaryCard label="Pending Approvals" value={analytics?.pendingParkings  ?? 0} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        {/* User role distribution — Pie chart */}
+        <section className="app-panel">
+          <div className="mb-4 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-brand-600" aria-hidden="true" />
+            <h2 className="app-heading text-sm font-semibold">User Role Distribution</h2>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={userRoleData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={90}
+                fill="#3b82f6"
+                label
+              >
+                {userRoleData.map((entry) => (
+                  <Cell key={entry.name} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  background: 'var(--app-surface)',
+                  border: '1px solid var(--app-border)',
+                  borderRadius: 8,
+                  fontSize: 12
+                }}
+                formatter={(value, name) => [value, name]}
+              />
+              <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+          {!hasUserData && (
+            <p className="app-copy mt-2 text-center text-xs">No user data yet.</p>
+          )}
+        </section>
+
+        {/* Parking verification status — Bar chart — always rendered */}
+        <section className="app-panel">
+          <div className="mb-4 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-brand-600" aria-hidden="true" />
+            <h2 className="app-heading text-sm font-semibold">Parking Verification Status</h2>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={parkingStatusData}
+              margin={{ top: 4, right: 16, left: -16, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border)" />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--app-text-muted)' }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--app-text-muted)' }} />
+              <Tooltip
+                contentStyle={{
+                  background: 'var(--app-surface)',
+                  border: '1px solid var(--app-border)',
+                  borderRadius: 8,
+                  fontSize: 12
+                }}
+                formatter={(value) => [value, 'Parkings']}
+              />
+              <Bar dataKey="value" name="Parkings" radius={[4, 4, 0, 0]}>
+                {parkingStatusData.map((entry) => (
+                  <Cell fill={entry.fill} key={entry.name} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {!hasParkingData && (
+            <p className="app-copy mt-2 text-center text-xs">No parking data yet.</p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

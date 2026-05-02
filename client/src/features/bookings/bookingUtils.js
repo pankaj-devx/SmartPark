@@ -87,10 +87,74 @@ export function validateBookingForm(form) {
   return '';
 }
 
+/**
+ * Client-side mirror of the server's computeBookingStatus.
+ * Uses the server-provided computedStatus when available (preferred),
+ * and falls back to local time-based computation for resilience.
+ */
+export function getComputedStatus(booking) {
+  // Trust the server value when present
+  if (booking.computedStatus) return booking.computedStatus;
+
+  // Cancelled/completed keep their stored status
+  if (booking.status === 'cancelled' || booking.status === 'completed') {
+    return booking.status;
+  }
+
+  try {
+    const now   = new Date();
+    const start = new Date(`${booking.bookingDate}T${booking.startTime}:00`);
+    const end   = new Date(`${booking.bookingDate}T${booking.endTime}:00`);
+
+    if (now < start) return 'upcoming';
+    if (now >= start && now <= end) return 'ongoing';
+    return 'completed';
+  } catch {
+    return booking.status;
+  }
+}
+
+/**
+ * Format a 24-hour "HH:MM" string to 12-hour AM/PM.
+ * e.g. "13:30" → "1:30 PM"
+ */
+export function formatTime12h(timeStr) {
+  if (!timeStr) return timeStr;
+  try {
+    const [hourStr, minuteStr] = timeStr.split(':');
+    const hour   = Number(hourStr);
+    const minute = Number(minuteStr);
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+  } catch {
+    return timeStr;
+  }
+}
+
+/**
+ * Format a "YYYY-MM-DD" date string to a readable form.
+ * e.g. "2026-05-02" → "May 2, 2026"
+ */
+export function formatBookingDate(dateStr) {
+  if (!dateStr) return dateStr;
+  try {
+    const date = new Date(`${dateStr}T00:00:00`);
+    return date.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Group bookings by their computed (time-aware) status.
+ * Uses computedStatus from the server when available.
+ */
 export function groupBookingsByStatus(bookings) {
   return {
-    upcoming: bookings.filter((booking) => booking.status === 'pending' || booking.status === 'confirmed'),
-    cancelled: bookings.filter((booking) => booking.status === 'cancelled'),
-    completed: bookings.filter((booking) => booking.status === 'completed')
+    upcoming:  bookings.filter((b) => getComputedStatus(b) === 'upcoming'),
+    ongoing:   bookings.filter((b) => getComputedStatus(b) === 'ongoing'),
+    completed: bookings.filter((b) => getComputedStatus(b) === 'completed'),
+    cancelled: bookings.filter((b) => getComputedStatus(b) === 'cancelled')
   };
 }

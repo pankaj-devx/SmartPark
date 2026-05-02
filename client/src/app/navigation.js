@@ -8,11 +8,13 @@ import {
   MapPinned,
   ReceiptText,
   ShieldCheck,
+  TrendingUp,
   Users
 } from 'lucide-react';
 
 export const driverNavItems = [
   { label: 'Home', to: '/dashboard', icon: LayoutDashboard },
+  { label: 'My Dashboard', to: '/dashboard/analytics', icon: TrendingUp },
   { label: 'Discover', to: '/parkings', icon: MapPinned },
   { label: 'Map', to: '/map', icon: MapPinned },
   { label: 'Reservations', to: '/bookings', icon: ClipboardList },
@@ -22,6 +24,7 @@ export const driverNavItems = [
 
 export const ownerNavItems = [
   { label: 'Overview', to: '/owner/overview', icon: LayoutDashboard },
+  { label: 'Analytics', to: '/owner/analytics', icon: TrendingUp },
   { label: 'Listings', to: '/owner/listings', icon: MapPinned },
   { label: 'Reservations', to: '/owner/reservations', icon: ClipboardList },
   { label: 'Occupancy', to: '/owner/occupancy', icon: BarChart3 },
@@ -31,6 +34,7 @@ export const ownerNavItems = [
 
 export const adminNavItems = [
   { label: 'Overview', to: '/admin/overview', icon: LayoutDashboard },
+  { label: 'Analytics', to: '/admin/analytics', icon: TrendingUp },
   { label: 'Approvals', to: '/admin/approvals', icon: ShieldCheck },
   { label: 'Bookings', to: '/admin/bookings', icon: ClipboardList },
   { label: 'Users', to: '/admin/users', icon: Users },

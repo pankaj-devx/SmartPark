@@ -12,6 +12,8 @@ import { ParkingDetailPage } from '../features/parkings/ParkingDetailPage.jsx';
 import { SearchResultsPage } from '../features/parkings/SearchResultsPage.jsx';
 import { MapPage } from '../pages/MapPage.jsx';
 import { NotFoundPage } from '../pages/NotFoundPage.jsx';
+import { DriverDashboard } from '../pages/DriverDashboard.jsx';
+import { OwnerDashboard } from '../pages/OwnerDashboard.jsx';
 import { DashboardRoute, RoleEntryRedirect, RoleHomeRoute } from './RouteRedirects.jsx';
 import { ProtectedRoute } from './ProtectedRoute.jsx';
 
@@ -97,6 +99,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate replace to="/admin/overview" /> },
           { path: 'overview', element: <AdminDashboardPage activeSection="overview" /> },
+          { path: 'analytics', element: <AdminDashboardPage activeSection="analytics" /> },
           { path: 'approvals', element: <AdminDashboardPage activeSection="approvals" /> },
           { path: 'bookings', element: <AdminDashboardPage activeSection="bookings" /> },
           { path: 'users', element: <AdminDashboardPage activeSection="users" /> },
@@ -110,6 +113,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <DashboardRoute activeSection="overview" />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'dashboard/analytics',
+        element: (
+          <ProtectedRoute roles={['driver']}>
+            <DriverDashboard />
           </ProtectedRoute>
         )
       },
@@ -129,6 +140,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate replace to="/owner/overview" /> },
           { path: 'overview', element: <OwnerParkingDashboard activeSection="overview" /> },
           { path: 'dashboard', element: <Navigate replace to="/owner/overview" /> },
+          { path: 'analytics', element: <OwnerDashboard /> },
           { path: 'listings', element: <OwnerParkingDashboard activeSection="listings" /> },
           { path: 'reservations', element: <OwnerParkingDashboard activeSection="reservations" /> },
           { path: 'occupancy', element: <OwnerParkingDashboard activeSection="occupancy" /> },
