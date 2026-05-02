@@ -1,7 +1,9 @@
+import mongoose from 'mongoose';
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
 import { approveParking, rejectParking, serializeParking, toggleParkingActive } from './parking.service.js';
+import { createHttpError } from '../utils/createHttpError.js';
 
 export async function getAdminDashboard(deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
@@ -137,4 +139,128 @@ function serializeAdminBooking(booking) {
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt
   };
+}
+
+// ---------------------------------------------------------------------------
+// User management
+// ---------------------------------------------------------------------------
+
+export async function listAdminUsers(deps = {}) {
+  const UserModel = deps.UserModel ?? User;
+  const users = await UserModel.find({}).sort({ createdAt: -1, _id: 1 }).lean();
+
+  return users.map(serializeAdminUser);
+}
+
+export async function blockAdminUser(id, requestingAdminId, deps = {}) {
+  const UserModel = deps.UserModel ?? User;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw createHttpError(404, 'User not found');
+  }
+
+  if (id === requestingAdminId) {
+    throw createHttpError(400, 'You cannot block your own account');
+  }
+
+  const user = await UserModel.findByIdAndUpdate(id, { status: 'suspended' }, { new: true });
+
+  if (!user) {
+    throw createHttpError(404, 'User not found');
+  }
+
+  return serializeAdminUser(user);
+}
+
+export async function unblockAdminUser(id, deps = {}) {
+  const UserModel = deps.UserModel ?? User;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw createHttpError(404, 'User not found');
+  }
+
+  const user = await UserModel.findByIdAndUpdate(id, { status: 'active' }, { new: true });
+
+  if (!user) {
+    throw createHttpError(404, 'User not found');
+  }
+
+  return serializeAdminUser(user);
+}
+
+// ---------------------------------------------------------------------------
+// Parking management
+// ---------------------------------------------------------------------------
+
+export async function deleteAdminParking(id, deps = {}) {
+  const ParkingModel = deps.ParkingModel ?? Parking;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw createHttpError(404, 'Parking listing not found');
+  }
+
+  const parking = await ParkingModel.findByIdAndDelete(id);
+
+  if (!parking) {
+    throw createHttpError(404, 'Parking listing not found');
+  }
+
+  return { deleted: true, id };
+}
+
+// ---------------------------------------------------------------------------
+// Booking management
+// ---------------------------------------------------------------------------
+
+export async function cancelAdminBooking(id, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+  const ParkingModel = deps.ParkingModel ?? Parking;
+  const runInTransaction = deps.runInTransaction ?? withAdminTransaction;
+
+  return runInTransaction(async (session) => {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw createHttpError(404, 'Booking not found');
+    }
+
+    const booking = await BookingModel.findById(id).session(session);
+
+    if (!booking) {
+      throw createHttpError(404, 'Booking not found');
+    }
+
+    if (booking.status === 'cancelled' || booking.status === 'completed') {
+      throw createHttpError(400, `Cannot cancel a booking that is already ${booking.status}`);
+    }
+
+    booking.status = 'cancelled';
+    booking.cancelledBy = 'admin';
+    await booking.save({ session });
+
+    await ParkingModel.findByIdAndUpdate(
+      booking.parking,
+      { $inc: { availableSlots: booking.slotCount } },
+      { session }
+    );
+
+    return serializeAdminBooking(booking);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+async function withAdminTransaction(work) {
+  const session = await mongoose.startSession();
+
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }

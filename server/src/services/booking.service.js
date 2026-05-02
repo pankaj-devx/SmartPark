@@ -42,6 +42,10 @@ export function calculateTotalAmount(parking, input) {
 }
 
 export async function createBooking(input, user, deps = {}) {
+  if (user.status === 'suspended') {
+    throw createHttpError(403, 'Your account has been suspended. You cannot create new bookings.');
+  }
+
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
   const runInTransaction = deps.runInTransaction ?? withTransaction;

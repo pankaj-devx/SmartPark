@@ -17,7 +17,15 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
     const payload = jwt.verify(token, env.JWT_SECRET);
     const user = await User.findById(payload.sub).select('-passwordHash');
 
-    if (!user || user.status !== 'active') {
+    if (!user) {
+      throw createHttpError(401, 'User account not found');
+    }
+
+    if (user.status === 'suspended') {
+      throw createHttpError(403, 'Account suspended. Contact admin.');
+    }
+
+    if (user.status !== 'active') {
       throw createHttpError(401, 'User account is not active');
     }
 

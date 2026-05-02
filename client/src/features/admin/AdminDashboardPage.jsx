@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CircleSlash, ClipboardCheck, Search, XCircle } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
+import { useAuth } from '../auth/useAuth.js';
 import { ProfilePage } from '../../pages/ProfilePage.jsx';
 import {
   approveAdminParking,
+  blockAdminUser,
+  cancelAdminBooking,
+  deleteAdminParking,
   fetchAdminBookings,
   fetchAdminDashboard,
   rejectAdminParking,
-  toggleAdminParkingActive
+  toggleAdminParkingActive,
+  unblockAdminUser
 } from './adminApi.js';
 
 const ADMIN_CACHE_KEY = 'smartpark_admin_dashboard_cache';
@@ -24,6 +29,7 @@ const statusStyles = {
 const cachedData = readAdminCache();
 
 export function AdminDashboardPage({ activeSection = 'overview' }) {
+  const { user: currentUser } = useAuth();
   const [bookings, setBookings] = useState(cachedData?.bookings ?? []);
   const [bookingStatus, setBookingStatus] = useState('');
   const [dashboard, setDashboard] = useState(cachedData?.dashboard ?? null);
@@ -121,6 +127,50 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     }
   }
 
+  async function handleBlockUser(user) {
+    setError('');
+
+    try {
+      const updated = await blockAdminUser(user.id);
+      setDashboard((current) => replaceUser(current, updated));
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError, 'Unable to block user'));
+    }
+  }
+
+  async function handleUnblockUser(user) {
+    setError('');
+
+    try {
+      const updated = await unblockAdminUser(user.id);
+      setDashboard((current) => replaceUser(current, updated));
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError, 'Unable to unblock user'));
+    }
+  }
+
+  async function handleDeleteParking(parking) {
+    setError('');
+
+    try {
+      await deleteAdminParking(parking.id);
+      setDashboard((current) => removeParking(current, parking.id));
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError, 'Unable to delete parking listing'));
+    }
+  }
+
+  async function handleCancelBooking(booking) {
+    setError('');
+
+    try {
+      const updated = await cancelAdminBooking(booking.id);
+      setBookings((current) => current.map((b) => (b.id === updated.id ? updated : b)));
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError, 'Unable to cancel booking'));
+    }
+  }
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
       <div className="app-panel">
@@ -133,9 +183,9 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
       {isLoading && !dashboard ? <SkeletonGrid /> : null}
 
       {activeSection === 'overview' ? <AdminOverview bookingMetrics={bookingMetrics} dashboard={dashboard} /> : null}
-      {activeSection === 'approvals' ? <AdminApprovals applyParkingUpdate={applyParkingUpdate} listingSearch={listingSearch} parkings={filteredParkings} rejectReason={rejectReason} rejectTarget={rejectTarget} setListingSearch={setListingSearch} setRejectReason={setRejectReason} setRejectTarget={setRejectTarget} /> : null}
-      {activeSection === 'bookings' ? <AdminBookings bookingSearch={bookingSearch} bookingStatus={bookingStatus} filteredBookings={filteredBookings} setBookingSearch={setBookingSearch} setBookingStatus={setBookingStatus} /> : null}
-      {activeSection === 'users' ? <AdminUsers filteredUsers={filteredUsers} search={userSearch} setSearch={setUserSearch} setUserRoleFilter={setUserRoleFilter} userMetrics={dashboard?.userMetrics} userRoleFilter={userRoleFilter} /> : null}
+      {activeSection === 'approvals' ? <AdminApprovals applyParkingUpdate={applyParkingUpdate} listingSearch={listingSearch} onDelete={handleDeleteParking} parkings={filteredParkings} rejectReason={rejectReason} rejectTarget={rejectTarget} setListingSearch={setListingSearch} setRejectReason={setRejectReason} setRejectTarget={setRejectTarget} /> : null}
+      {activeSection === 'bookings' ? <AdminBookings bookingSearch={bookingSearch} bookingStatus={bookingStatus} filteredBookings={filteredBookings} onCancel={handleCancelBooking} setBookingSearch={setBookingSearch} setBookingStatus={setBookingStatus} /> : null}
+      {activeSection === 'users' ? <AdminUsers currentAdminId={currentUser?.id} filteredUsers={filteredUsers} onBlock={handleBlockUser} onUnblock={handleUnblockUser} search={userSearch} setSearch={setUserSearch} setUserRoleFilter={setUserRoleFilter} userMetrics={dashboard?.userMetrics} userRoleFilter={userRoleFilter} /> : null}
       {activeSection === 'reports' ? <AdminReports bookingMetrics={bookingMetrics} dashboard={dashboard} /> : null}
       {activeSection === 'settings' ? <ProfilePage defaultTab="security" embedded showHeader={false} /> : null}
     </section>
@@ -172,7 +222,7 @@ function AdminOverview({ bookingMetrics, dashboard }) {
   );
 }
 
-function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectReason, rejectTarget, setListingSearch, setRejectReason, setRejectTarget }) {
+function AdminApprovals({ applyParkingUpdate, listingSearch, onDelete, parkings, rejectReason, rejectTarget, setListingSearch, setRejectReason, setRejectTarget }) {
   return (
     <div className="mt-6 grid gap-8">
       <Panel title="Listing search" subtitle="Search by title, city, state, or owner-facing listing details.">
@@ -187,6 +237,7 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectRea
       <ModerationSection
         icon={ClipboardCheck}
         onApprove={(parking) => applyParkingUpdate(() => approveAdminParking(parking.id))}
+        onDelete={onDelete}
         onReject={(parking) => setRejectTarget(parking)}
         onToggle={(parking) => applyParkingUpdate(() => toggleAdminParkingActive(parking.id))}
         parkings={parkings.pending}
@@ -194,6 +245,7 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectRea
       />
       <ModerationSection
         icon={CheckCircle2}
+        onDelete={onDelete}
         onReject={(parking) => setRejectTarget(parking)}
         onToggle={(parking) => applyParkingUpdate(() => toggleAdminParkingActive(parking.id))}
         parkings={parkings.approved}
@@ -202,6 +254,7 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectRea
       <ModerationSection
         icon={XCircle}
         onApprove={(parking) => applyParkingUpdate(() => approveAdminParking(parking.id))}
+        onDelete={onDelete}
         onToggle={(parking) => applyParkingUpdate(() => toggleAdminParkingActive(parking.id))}
         parkings={parkings.rejected}
         title="Rejected listings"
@@ -237,7 +290,7 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, parkings, rejectRea
   );
 }
 
-function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, setBookingSearch, setBookingStatus }) {
+function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, onCancel, setBookingSearch, setBookingStatus }) {
   return (
       <Panel title="Bookings" subtitle="Review booking flow, user context, and exception patterns without leaving the admin workspace.">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -271,10 +324,19 @@ function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, setBook
                 <p className="mt-1 text-sm text-slate-600">{booking.parkingTitle || booking.parking} - {booking.userName || booking.user}</p>
                 {booking.userEmail ? <p className="mt-1 text-xs text-slate-500">{booking.userEmail}</p> : null}
               </div>
-              <div className="flex flex-wrap gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className={`rounded-md px-2 py-1 font-semibold capitalize ${statusStyles[booking.status] ?? statusStyles.completed}`}>{booking.status}</span>
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">Rs {booking.totalAmount}</span>
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">{booking.slotCount} slots</span>
+                {(booking.status === 'pending' || booking.status === 'confirmed') ? (
+                  <button
+                    className="rounded-md border border-red-300 bg-red-50 px-3 py-1 text-sm font-semibold text-red-700 hover:bg-red-100"
+                    onClick={() => onCancel(booking)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
               </div>
             </div>
           </article>
@@ -284,7 +346,7 @@ function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, setBook
   );
 }
 
-function AdminUsers({ filteredUsers, search, setSearch, setUserRoleFilter, userMetrics, userRoleFilter }) {
+function AdminUsers({ currentAdminId, filteredUsers, onBlock, onUnblock, search, setSearch, setUserRoleFilter, userMetrics, userRoleFilter }) {
   return (
       <Panel title="Users" subtitle="Search and review the active marketplace population with less noise.">
       <div className="grid gap-4 md:grid-cols-3">
@@ -321,9 +383,27 @@ function AdminUsers({ filteredUsers, search, setSearch, setUserRoleFilter, userM
                   <p className="mt-1 text-sm text-slate-600">{user.email}</p>
                   <p className="mt-1 text-xs text-slate-500">{user.phone || 'No phone on file'}</p>
                 </div>
-                <div className="flex flex-wrap gap-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="rounded-md bg-slate-100 px-2 py-1 font-semibold capitalize text-slate-700">{user.role}</span>
                   <span className={`rounded-md px-2 py-1 font-semibold capitalize ${user.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{user.status}</span>
+                  {user.id !== currentAdminId && user.status === 'active' ? (
+                    <button
+                      className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+                      onClick={() => onBlock(user)}
+                      type="button"
+                    >
+                      Block
+                    </button>
+                  ) : null}
+                  {user.status === 'suspended' ? (
+                    <button
+                      className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                      onClick={() => onUnblock(user)}
+                      type="button"
+                    >
+                      Unblock
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -409,7 +489,7 @@ function SkeletonGrid() {
   );
 }
 
-function ModerationSection({ icon, onApprove, onReject, onToggle, parkings, title }) {
+function ModerationSection({ icon, onApprove, onDelete, onReject, onToggle, parkings, title }) {
   const SectionIcon = icon;
 
   return (
@@ -440,6 +520,15 @@ function ModerationSection({ icon, onApprove, onReject, onToggle, parkings, titl
               <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => onToggle(parking)} type="button">
                 {parking.isActive ? 'Deactivate' : 'Activate'}
               </button>
+              {onDelete ? (
+                <button
+                  className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                  onClick={() => onDelete(parking)}
+                  type="button"
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           </article>
         ))}
@@ -472,6 +561,58 @@ function replaceParking(current, parking) {
       pending: allParkings.filter((item) => item.verificationStatus === 'pending'),
       approved: allParkings.filter((item) => item.verificationStatus === 'approved'),
       rejected: allParkings.filter((item) => item.verificationStatus === 'rejected')
+    }
+  };
+}
+
+function removeParking(current, id) {
+  if (!current) {
+    return current;
+  }
+
+  const allParkings = [
+    ...current.parkings.pending,
+    ...current.parkings.approved,
+    ...current.parkings.rejected
+  ].filter((item) => item.id !== id);
+
+  return {
+    ...current,
+    summary: {
+      ...current.summary,
+      pendingApprovals: allParkings.filter((item) => item.verificationStatus === 'pending').length,
+      approvedListings: allParkings.filter((item) => item.verificationStatus === 'approved').length,
+      rejectedListings: allParkings.filter((item) => item.verificationStatus === 'rejected').length
+    },
+    parkings: {
+      pending: allParkings.filter((item) => item.verificationStatus === 'pending'),
+      approved: allParkings.filter((item) => item.verificationStatus === 'approved'),
+      rejected: allParkings.filter((item) => item.verificationStatus === 'rejected')
+    }
+  };
+}
+
+function replaceUser(current, updatedUser) {
+  if (!current) {
+    return current;
+  }
+
+  return {
+    ...current,
+    users: current.users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
+    userMetrics: {
+      drivers: current.users
+        .map((u) => (u.id === updatedUser.id ? updatedUser : u))
+        .filter((u) => u.role === 'driver').length,
+      owners: current.users
+        .map((u) => (u.id === updatedUser.id ? updatedUser : u))
+        .filter((u) => u.role === 'owner').length,
+      admins: current.users
+        .map((u) => (u.id === updatedUser.id ? updatedUser : u))
+        .filter((u) => u.role === 'admin').length,
+      suspended: current.users
+        .map((u) => (u.id === updatedUser.id ? updatedUser : u))
+        .filter((u) => u.status === 'suspended').length
     }
   };
 }
