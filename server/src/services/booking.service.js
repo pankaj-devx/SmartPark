@@ -37,6 +37,154 @@ export function computeBookingStatus(booking) {
   }
 }
 
+/**
+ * Reconcile expired bookings for a parking listing.
+ *
+ * Finds all confirmed/pending bookings for the given parking whose time
+ * window has fully passed, marks them completed, and restores their slot
+ * counts to the parking's availableSlots field — all in a single atomic
+ * operation.
+ *
+ * This is called lazily on parking reads so availableSlots stays accurate
+ * without a background job. It is idempotent: running it twice is safe.
+ *
+ * @param {string|ObjectId} parkingId
+ * @param {object} deps - injectable for testing
+ */
+export async function reconcileExpiredBookings(parkingId, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+  const ParkingModel = deps.ParkingModel ?? Parking;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  // Find all active bookings for this parking whose end window has passed.
+  // A booking is expired when:
+  //   bookingDate < today  →  entirely in the past
+  //   bookingDate === today AND endTime <= currentTime  →  ended today
+  const expiredBookings = await BookingModel.find({
+    parking: parkingId,
+    status: { $in: ACTIVE_BOOKING_STATUSES },
+    $or: [
+      { bookingDate: { $lt: todayStr } },
+      { bookingDate: todayStr, endTime: { $lte: currentTime } }
+    ]
+  }).lean();
+
+  if (expiredBookings.length === 0) {
+    return 0; // nothing to do
+  }
+
+  const expiredIds = expiredBookings.map((b) => b._id);
+  const slotsToRestore = expiredBookings.reduce((sum, b) => sum + b.slotCount, 0);
+
+  // Mark all expired bookings as completed and restore slots atomically.
+  await Promise.all([
+    BookingModel.updateMany(
+      { _id: { $in: expiredIds } },
+      { $set: { status: 'completed' } }
+    ),
+    ParkingModel.findByIdAndUpdate(
+      parkingId,
+      { $inc: { availableSlots: slotsToRestore } }
+    )
+  ]);
+
+  // Clamp availableSlots to totalSlots (safety net)
+  await ParkingModel.updateOne(
+    { _id: parkingId },
+    [{ $set: { availableSlots: { $min: ['$availableSlots', '$totalSlots'] } } }]
+  );
+
+  return expiredBookings.length;
+}
+
+/**
+ * Compute the real-time available slot count for a parking at the current
+ * moment by counting active bookings that overlap right now.
+ *
+ * Used to enrich list responses (search, nearby) without modifying the DB.
+ * The stored availableSlots field is kept for DB-level filtering/sorting;
+ * this value is what clients should display.
+ *
+ * @param {string|ObjectId} parkingId
+ * @param {number} totalSlots
+ * @param {object} deps
+ * @returns {Promise<number>}
+ */
+export async function computeLiveAvailableSlots(parkingId, totalSlots, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const result = await BookingModel.aggregate([
+    {
+      $match: {
+        parking: new mongoose.Types.ObjectId(parkingId.toString()),
+        status: { $in: ACTIVE_BOOKING_STATUSES },
+        bookingDate: todayStr,
+        startTime: { $lte: currentTime },
+        endTime: { $gt: currentTime }
+      }
+    },
+    {
+      $group: { _id: null, occupiedSlots: { $sum: '$slotCount' } }
+    }
+  ]);
+
+  const occupiedNow = result[0]?.occupiedSlots ?? 0;
+  return Math.max(0, totalSlots - occupiedNow);
+}
+
+/**
+ * Compute live available slots for multiple parkings in a single aggregation.
+ * Returns a Map of parkingId (string) → liveAvailableSlots (number).
+ *
+ * @param {Array<{id: string, totalSlots: number}>} parkings
+ * @param {object} deps
+ * @returns {Promise<Map<string, number>>}
+ */
+export async function computeLiveAvailableSlotsForMany(parkings, deps = {}) {
+  if (parkings.length === 0) return new Map();
+
+  const BookingModel = deps.BookingModel ?? Booking;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const parkingIds = parkings.map((p) => new mongoose.Types.ObjectId(p.id.toString()));
+
+  const occupied = await BookingModel.aggregate([
+    {
+      $match: {
+        parking: { $in: parkingIds },
+        status: { $in: ACTIVE_BOOKING_STATUSES },
+        bookingDate: todayStr,
+        startTime: { $lte: currentTime },
+        endTime: { $gt: currentTime }
+      }
+    },
+    {
+      $group: { _id: '$parking', occupiedSlots: { $sum: '$slotCount' } }
+    }
+  ]);
+
+  const occupiedMap = new Map(occupied.map((r) => [r._id.toString(), r.occupiedSlots]));
+
+  const result = new Map();
+  for (const p of parkings) {
+    const idStr = p.id.toString();
+    const occupiedNow = occupiedMap.get(idStr) ?? 0;
+    result.set(idStr, Math.max(0, p.totalSlots - occupiedNow));
+  }
+
+  return result;
+}
+
 export function serializeBooking(booking) {
   return {
     id: booking._id.toString(),

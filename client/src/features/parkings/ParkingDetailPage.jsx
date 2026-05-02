@@ -57,16 +57,24 @@ export function ParkingDetailPage() {
 
     loadReviews();
   }, [id]);
-  function handleBookingSuccess(booking) {
+  async function handleBookingSuccess(booking) {
     clearGuestBookingIntent(id);
-    setParking((current) =>
-      current
-        ? {
-            ...current,
-            availableSlots: Math.max(0, current.availableSlots - booking.slotCount)
-          }
-        : current
-    );
+    setIsBookingOpen(false);
+
+    // Refetch the parking from the API so availableSlots reflects the server's
+    // authoritative value (which includes reconciliation of any expired bookings)
+    // rather than an optimistic client-side decrement that could drift.
+    try {
+      const refreshed = await fetchParkingById(id);
+      setParking(refreshed);
+    } catch {
+      // Fallback: apply optimistic decrement if the refetch fails
+      setParking((current) =>
+        current
+          ? { ...current, availableSlots: Math.max(0, current.availableSlots - booking.slotCount) }
+          : current
+      );
+    }
   }
 
   function handleToggleSaved() {

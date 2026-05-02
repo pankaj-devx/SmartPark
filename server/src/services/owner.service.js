@@ -3,6 +3,7 @@ import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
 import { serializeBooking } from './booking.service.js';
+import { computeLiveAvailableSlotsForMany } from './booking.service.js';
 import { serializeParking } from './parking.service.js';
 
 const EARNING_STATUSES = ['confirmed', 'completed'];
@@ -34,7 +35,17 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
   ]);
 
   const serializedBookings = bookings.map(serializeBooking);
-  const serializedParkings = parkings.map(serializeParking);
+
+  // Inject live available slot counts into owner parkings
+  const liveSlots = await computeLiveAvailableSlotsForMany(
+    parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    deps
+  );
+  const serializedParkings = parkings.map((p) => {
+    const serialized = serializeParking(p);
+    const live = liveSlots.get(p._id.toString());
+    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+  });
 
   return {
     bookings: serializedBookings,
@@ -56,10 +67,27 @@ export async function completeOwnerBooking(id, user, deps = {}) {
     return serializeBooking(booking);
   }
 
+  // Check whether this booking's time window has already passed.
+  // If it has, reconcileExpiredBookings will have already (or will soon)
+  // restore the slots — so we must NOT increment again here.
+  const now = new Date();
+  const endDateTime = new Date(`${booking.bookingDate}T${booking.endTime}:00`);
+  const alreadyExpired = now > endDateTime;
+
   booking.status = 'completed';
   await booking.save();
 
-  await ParkingModel.findByIdAndUpdate(booking.parking, { $inc: { availableSlots: booking.slotCount } });
+  // Only restore slots if the booking hasn't expired yet (i.e. the owner is
+  // completing it early). For expired bookings, reconcileExpiredBookings
+  // handles the slot restoration to prevent double-counting.
+  if (!alreadyExpired) {
+    await ParkingModel.findByIdAndUpdate(booking.parking, { $inc: { availableSlots: booking.slotCount } });
+    // Clamp to totalSlots
+    await ParkingModel.updateOne(
+      { _id: booking.parking },
+      [{ $set: { availableSlots: { $min: ['$availableSlots', '$totalSlots'] } } }]
+    );
+  }
 
   return serializeBooking(booking);
 }

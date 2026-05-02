@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js';
 import { Parking } from '../models/parking.model.js';
+import { computeLiveAvailableSlotsForMany, reconcileExpiredBookings } from './booking.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 const MAX_PARKING_IMAGES = 5;
@@ -239,8 +240,18 @@ export async function listPublicParkings(query, deps = {}) {
   ]);
   const rankedParkings = applyRanking(parkings, query);
 
+  // Inject live available slot counts so list results reflect current occupancy
+  const liveSlots = await computeLiveAvailableSlotsForMany(
+    rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    deps
+  );
+
   return {
-    parkings: rankedParkings.map(serializeParking),
+    parkings: rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const live = liveSlots.get(p._id.toString());
+      return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+    }),
     pagination: {
       page,
       limit,
@@ -284,8 +295,18 @@ export async function listNearbyParkings(query, deps = {}) {
   const total = result?.metadata?.[0]?.total ?? 0;
   const rankedParkings = applyRanking(parkings, { ...query, sort: query.sort ?? 'nearest' });
 
+  // Inject live available slot counts
+  const liveSlots = await computeLiveAvailableSlotsForMany(
+    rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    deps
+  );
+
   return {
-    parkings: rankedParkings.map(serializeParking),
+    parkings: rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const live = liveSlots.get(p._id.toString());
+      return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+    }),
     pagination: {
       page,
       limit,
@@ -299,7 +320,17 @@ export async function listOwnerParkings(user, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const parkings = await ParkingModel.find({ owner: user._id }).sort({ createdAt: -1 }).lean();
 
-  return parkings.map(serializeParking);
+  // Inject live available slot counts so the owner sees current occupancy
+  const liveSlots = await computeLiveAvailableSlotsForMany(
+    parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    deps
+  );
+
+  return parkings.map((p) => {
+    const serialized = serializeParking(p);
+    const live = liveSlots.get(p._id.toString());
+    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+  });
 }
 
 export async function getParkingDetail(id, user = null, deps = {}) {
@@ -307,11 +338,19 @@ export async function getParkingDetail(id, user = null, deps = {}) {
   const parking = await findParkingById(ParkingModel, id);
 
   if (parking.verificationStatus === 'approved' && parking.isActive) {
-    return serializeParking(parking);
+    // Reconcile any expired bookings so availableSlots is accurate before
+    // returning. This is the most important read path — it's what the
+    // booking form and parking detail page use.
+    await reconcileExpiredBookings(parking._id, deps);
+    // Re-fetch after reconciliation so the updated availableSlots is returned
+    const refreshed = await ParkingModel.findById(parking._id).lean();
+    return serializeParking(refreshed ?? parking);
   }
 
   if (user && canManageParking(user, parking)) {
-    return serializeParking(parking);
+    await reconcileExpiredBookings(parking._id, deps);
+    const refreshed = await ParkingModel.findById(parking._id).lean();
+    return serializeParking(refreshed ?? parking);
   }
 
   throw createHttpError(404, 'Parking listing not found');

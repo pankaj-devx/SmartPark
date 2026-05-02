@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
-import { approveParking, rejectParking, serializeParking, toggleParkingActive } from './parking.service.js';
+import { computeLiveAvailableSlotsForMany } from './booking.service.js';
+import { serializeParking, approveParking, rejectParking, toggleParkingActive } from './parking.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 export async function getAdminDashboard(deps = {}) {
@@ -20,7 +21,7 @@ export async function getAdminDashboard(deps = {}) {
       ParkingModel.find({}).sort({ createdAt: -1, _id: 1 }).lean(),
       resolveAdminUsers(UserModel)
     ]);
-  const serializedParkings = parkings.map(serializeParking);
+  const serializedParkings = await serializeParkingsWithLiveSlots(parkings, deps);
 
   return {
     summary: {
@@ -45,8 +46,9 @@ export async function getAdminDashboard(deps = {}) {
 export async function listAdminParkings(deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const parkings = await ParkingModel.find({}).sort({ createdAt: -1, _id: 1 }).lean();
+  const serializedParkings = await serializeParkingsWithLiveSlots(parkings, deps);
 
-  return groupParkingsByStatus(parkings.map(serializeParking));
+  return groupParkingsByStatus(serializedParkings);
 }
 
 export async function approveAdminParking(id, deps = {}) {
@@ -88,6 +90,24 @@ export async function listAdminBookings(query = {}, deps = {}) {
   const bookings = await bookingsQuery.sort({ createdAt: -1, _id: 1 }).lean();
 
   return bookings.map(serializeAdminBooking);
+}
+
+/**
+ * Serialize an array of raw parking documents and inject live available slot
+ * counts from a single batched aggregation. Used by admin endpoints that need
+ * accurate slot data across all listings.
+ */
+async function serializeParkingsWithLiveSlots(parkings, deps = {}) {
+  const liveSlots = await computeLiveAvailableSlotsForMany(
+    parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    deps
+  );
+
+  return parkings.map((p) => {
+    const serialized = serializeParking(p);
+    const live = liveSlots.get(p._id.toString());
+    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+  });
 }
 
 function groupParkingsByStatus(parkings) {
