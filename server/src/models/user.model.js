@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required: false,
       select: false
     },
     role: {
@@ -94,6 +94,13 @@ const userSchema = new mongoose.Schema(
       enum: ['active', 'suspended'],
       default: 'active',
       index: true
+    },
+    googleId: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+      sparse: true
     }
   },
   {

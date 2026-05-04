@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarCheck, X } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
-import { createBooking } from './bookingApi.js';
+import { createBooking, createPaymentOrder, verifyPayment } from './bookingApi.js';
 import { getBookingSubmitPlan } from './bookingIntent.js';
 import { calculateEstimatedTotal, formatDuration, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
 
@@ -16,12 +16,16 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
       // For multiple options the user must choose explicitly; for zero options
       // (data not yet loaded) stay empty — the select will be empty anyway.
       vehicleType: initialValues.vehicleType?.trim() || (types.length === 1 ? types[0] : ''),
-      slotCount: initialValues.slotCount ?? 1
+      slotCount: initialValues.slotCount ?? 1,
+      coupon: ''
     };
   });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
+
+  // Today's date string "YYYY-MM-DD" — used as the min value for the date picker
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const durationHours = getBookingDurationHours(form.startTime, form.endTime);
 
@@ -84,8 +88,20 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
         endTime: form.endTime,
         slotCount: Number(form.slotCount)
       });
-      setConfirmation(booking);
-      onSuccess(booking);
+      const paymentOrder = await createPaymentOrder({
+        bookingId: booking.id,
+        coupon: form.coupon || undefined
+      });
+
+      if (paymentOrder.testPayment) {
+        setConfirmation(paymentOrder.booking);
+        onSuccess(paymentOrder.booking);
+        return;
+      }
+
+      const paidBooking = await openRazorpayCheckout(paymentOrder, parking.title);
+      setConfirmation(paidBooking);
+      onSuccess(paidBooking);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to reserve this time slot'));
     } finally {
@@ -117,6 +133,7 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               <SummaryItem label="Vehicle" value={confirmation.vehicleType} />
               <SummaryItem label="Amount" value={`Rs ${confirmation.totalAmount}`} />
               <SummaryItem label="Status" value={confirmation.status} />
+              <SummaryItem label="Payment" value={confirmation.paymentStatus} />
             </dl>
             <button className="mt-5 w-full rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" onClick={onClose} type="button">
               Done
@@ -124,9 +141,17 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
           </div>
         ) : (
           <form className="grid gap-4 p-5" onSubmit={handleSubmit}>
-            <Field label="Booking date" name="bookingDate" onChange={updateField} required type="date" value={form.bookingDate} />
+            <Field label="Booking date" name="bookingDate" onChange={updateField} required type="date" min={todayStr} value={form.bookingDate} />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Start time" name="startTime" onChange={updateField} required type="time" value={form.startTime} />
+              <Field
+                label="Start time"
+                name="startTime"
+                onChange={updateField}
+                required
+                type="time"
+                min={form.bookingDate === todayStr ? new Date().toTimeString().slice(0, 5) : undefined}
+                value={form.startTime}
+              />
               <Field label="End time" name="endTime" onChange={updateField} required type="time" value={form.endTime} />
             </div>
             {timeRangeError ? (
@@ -180,6 +205,8 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               </dl>
             </div>
 
+            <Field label="Coupon code" name="coupon" onChange={updateField} placeholder="Optional" type="text" value={form.coupon} />
+
             {error ? (
               <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {error.includes('time slot') ? 'That time overlaps with another booking. Try a different slot.' : error}
@@ -191,13 +218,68 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
               disabled={isSubmitting || parking.availableSlots < 1}
               type="submit"
             >
-              {isSubmitting ? 'Reserving...' : isAuthenticated ? 'Confirm reservation' : 'Continue to sign in'}
+              {isSubmitting ? 'Processing...' : isAuthenticated ? 'Book and pay' : 'Continue to sign in'}
             </button>
           </form>
         )}
       </div>
     </div>
   );
+}
+
+async function openRazorpayCheckout(paymentOrder, parkingTitle) {
+  await loadRazorpayCheckout();
+
+  return new Promise((resolve, reject) => {
+    const checkout = new window.Razorpay({
+      key: paymentOrder.keyId,
+      amount: paymentOrder.amount,
+      currency: paymentOrder.currency,
+      name: 'SmartPark',
+      description: parkingTitle,
+      order_id: paymentOrder.orderId,
+      handler: async (response) => {
+        try {
+          const booking = await verifyPayment({
+            bookingId: paymentOrder.booking.id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature
+          });
+          resolve(booking);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      modal: {
+        ondismiss: () => reject(new Error('Payment was cancelled'))
+      },
+      prefill: {},
+      theme: {
+        color: '#2563eb'
+      }
+    });
+
+    checkout.on('payment.failed', () => {
+      reject(new Error('Payment failed. Please try again.'));
+    });
+
+    checkout.open();
+  });
+}
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Unable to load payment checkout'));
+    document.body.appendChild(script);
+  });
 }
 
 function Field({ label, ...props }) {

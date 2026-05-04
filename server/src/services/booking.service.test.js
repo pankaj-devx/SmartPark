@@ -45,7 +45,7 @@ test('calculateTotalAmount bills rounded-up hours by slot count', () => {
   assert.equal(amount, 240);
 });
 
-test('successful booking decrements available slots and returns confirmed booking', async () => {
+test('successful booking decrements available slots and returns pending unpaid booking', async () => {
   let receivedUpdateFilter;
   const parking = makeParking({ availableSlots: 5, totalSlots: 5, hourlyPrice: 50 });
 
@@ -77,7 +77,9 @@ test('successful booking decrements available slots and returns confirmed bookin
 
   assert.equal(receivedUpdateFilter.availableSlots.$gte, 2);
   assert.equal(parking.availableSlots, 3);
-  assert.equal(booking.status, 'confirmed');
+  assert.equal(booking.status, 'pending');
+  assert.equal(booking.paymentStatus, 'pending');
+  assert.ok(booking.paymentExpiresAt instanceof Date);
   assert.equal(booking.totalAmount, 200);
 });
 
@@ -230,6 +232,9 @@ function makeBooking(overrides = {}) {
     slotCount: overrides.slotCount,
     totalAmount: overrides.totalAmount ?? 120,
     status: overrides.status ?? 'confirmed',
+    paymentStatus: overrides.paymentStatus ?? 'pending',
+    isTestPayment: overrides.isTestPayment ?? false,
+    paymentExpiresAt: overrides.paymentExpiresAt,
     createdAt: new Date('2026-04-28T00:00:00.000Z'),
     updatedAt: new Date('2026-04-28T00:00:00.000Z'),
     async save() {

@@ -17,5 +17,11 @@ export const env = {
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME ?? '',
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ?? '',
   CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ?? '',
-  CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER ?? 'smartpark/parkings'
+  CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER ?? 'smartpark/parkings',
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? '',
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? '',
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  ALLOW_TEST_PAYMENT: process.env.ALLOW_TEST_PAYMENT === 'true',
+  TEST_COUPON_CODE: process.env.TEST_COUPON_CODE ?? '',
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? ''
 };

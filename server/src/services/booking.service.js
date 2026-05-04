@@ -6,6 +6,23 @@ import { createHttpError } from '../utils/createHttpError.js';
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
 
 /**
+ * Returns true only when the booking start datetime is strictly in the future.
+ *
+ * Both arguments are compared against the current server time with no manual
+ * timezone offset — Date parsing of "YYYY-MM-DDTHH:mm:00" uses the local
+ * system timezone, which is consistent with how computeBookingStatus works.
+ *
+ * @param {string} bookingDate  "YYYY-MM-DD"
+ * @param {string} startTime    "HH:mm"
+ * @returns {boolean}
+ */
+export function isFutureBooking(bookingDate, startTime) {
+  const now = new Date();
+  const bookingDateTime = new Date(`${bookingDate}T${startTime}:00`);
+  return bookingDateTime > now;
+}
+
+/**
  * Derive a time-aware display status for a booking.
  *
  * Cancelled/completed bookings keep their stored status.
@@ -197,6 +214,9 @@ export function serializeBooking(booking) {
     slotCount: booking.slotCount,
     totalAmount: booking.totalAmount,
     status: booking.status,
+    paymentStatus: booking.paymentStatus ?? 'pending',
+    isTestPayment: booking.isTestPayment ?? false,
+    paymentExpiresAt: booking.paymentExpiresAt,
     computedStatus: computeBookingStatus(booking),
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt
@@ -225,6 +245,10 @@ export function calculateTotalAmount(parking, input) {
 export async function createBooking(input, user, deps = {}) {
   if (user.status === 'suspended') {
     throw createHttpError(403, 'Your account has been suspended. You cannot create new bookings.');
+  }
+
+  if (!isFutureBooking(input.bookingDate, input.startTime)) {
+    throw createHttpError(400, 'Cannot book a past time slot');
   }
 
   const BookingModel = deps.BookingModel ?? Booking;
@@ -270,7 +294,10 @@ export async function createBooking(input, user, deps = {}) {
           endTime: input.endTime,
           slotCount: input.slotCount,
           totalAmount: calculateTotalAmount(parking, input),
-          status: 'confirmed'
+          status: 'pending',
+          paymentStatus: 'pending',
+          isTestPayment: false,
+          paymentExpiresAt: new Date(Date.now() + 10 * 60 * 1000)
         }
       ],
       { session }

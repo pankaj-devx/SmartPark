@@ -4,32 +4,32 @@ import { apiClient } from '../../lib/apiClient.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { getDefaultRouteForRole } from '../../app/navigation.js';
 import { AuthForm } from './AuthForm.jsx';
+import { validateEmail } from './authValidation.js';
 import { FormField } from './FormField.jsx';
+import { GoogleAuthButton } from './GoogleAuthButton.jsx';
 import { useAuth } from './useAuth.js';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { isAuthenticated, login, user } = useAuth();
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    email: '',
-    password: ''
-  });
+  const [form, setForm] = useState({ email: '', password: '' });
 
   if (isAuthenticated) {
     return <Navigate replace to={getDefaultRouteForRole(user?.role)} />;
   }
 
   function updateField(event) {
-    setForm((current) => ({
-      ...current,
-      [event.target.name]: event.target.value
-    }));
+    setError('');
+    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
+
+    const emailError = validateEmail(form.email);
+    if (emailError) { setError(emailError); return; }
 
     try {
       const response = await apiClient.post('/auth/login', form);
@@ -38,6 +38,10 @@ export function LoginPage() {
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to sign in right now'));
     }
+  }
+
+  function handleGoogleSuccess(authData) {
+    navigate(getDefaultRouteForRole(authData.user?.role));
   }
 
   return (
@@ -65,6 +69,14 @@ export function LoginPage() {
         type="password"
         value={form.password}
       />
+
+      <div className="relative flex items-center gap-3 py-1">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className="text-xs text-slate-400">or</span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+
+      <GoogleAuthButton onSuccess={handleGoogleSuccess} onError={setError} />
     </AuthForm>
   );
 }

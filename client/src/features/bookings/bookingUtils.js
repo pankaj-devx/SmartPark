@@ -84,6 +84,12 @@ export function validateBookingForm(form) {
     return 'End time must be different from start time.';
   }
 
+  // Reject if the selected date + start time is not in the future.
+  const bookingDateTime = new Date(`${form.bookingDate}T${form.startTime}:00`);
+  if (bookingDateTime <= new Date()) {
+    return 'Start time must be in the future.';
+  }
+
   return '';
 }
 

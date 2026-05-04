@@ -16,4 +16,16 @@ export const createBookingSchema = z
   .refine((data) => data.startTime < data.endTime, {
     path: ['endTime'],
     message: 'End time must be after start time'
-  });
+  })
+  .refine(
+    (data) => {
+      // Reject if the booking start datetime is not in the future.
+      // Uses the same logic as isFutureBooking in booking.service.js.
+      const bookingDateTime = new Date(`${data.bookingDate}T${data.startTime}:00`);
+      return bookingDateTime > new Date();
+    },
+    {
+      path: ['startTime'],
+      message: 'Cannot book a past time slot'
+    }
+  );
