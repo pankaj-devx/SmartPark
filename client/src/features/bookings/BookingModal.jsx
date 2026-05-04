@@ -101,6 +101,7 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
     setIsSubmitting(true);
 
     try {
+      console.log('[BookingModal] Creating booking...');
       const booking = await createBooking({
         parking: parking.id,
         vehicleType: form.vehicleType,
@@ -109,21 +110,26 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
         endTime: form.endTime,
         slotCount: Number(form.slotCount)
       });
+      console.log('[BookingModal] Booking created:', booking.bookingCode);
+      
       const paymentOrder = await createPaymentOrder({
         bookingId: booking.id,
         coupon: form.coupon || undefined
       });
 
       if (paymentOrder.testPayment) {
+        console.log('[BookingModal] Test payment confirmed, triggering data sync');
         setConfirmation(paymentOrder.booking);
         onSuccess(paymentOrder.booking);
         return;
       }
 
       const paidBooking = await openRazorpayCheckout(paymentOrder, parking.title);
+      console.log('[BookingModal] Payment completed, triggering data sync');
       setConfirmation(paidBooking);
       onSuccess(paidBooking);
     } catch (apiError) {
+      console.error('[BookingModal] Booking failed:', apiError);
       setError(getApiErrorMessage(apiError, 'Unable to reserve this time slot'));
     } finally {
       setIsSubmitting(false);

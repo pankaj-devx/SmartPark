@@ -187,6 +187,8 @@ function buildOwnerSummary(bookings, parkings) {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  
+  // Calculate currently occupied slots (bookings happening RIGHT NOW)
   const occupiedSlotsNow = bookings
     .filter(
       (booking) =>
@@ -196,8 +198,11 @@ function buildOwnerSummary(bookings, parkings) {
         booking.endTime > currentTime
     )
     .reduce((sum, booking) => sum + booking.slotCount, 0);
-  const totalSlots = parkings.reduce((sum, parking) => sum + parking.totalSlots, 0);
-  const availableSlotsNow = Math.max(0, totalSlots - occupiedSlotsNow);
+  
+  // Calculate available slots from parking data
+  // availableSlots already accounts for ALL active bookings (current + future)
+  const availableSlotsNow = parkings.reduce((sum, parking) => sum + parking.availableSlots, 0);
+  
   const upcomingReservations = bookings.filter(
     (booking) =>
       ACTIVE_STATUSES.includes(booking.status) &&

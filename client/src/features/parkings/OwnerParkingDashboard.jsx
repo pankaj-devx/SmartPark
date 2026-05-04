@@ -32,10 +32,15 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
     setIsLoading(true);
 
     try {
+      console.log('[OwnerDashboard] Loading owner data with filters:', bookingFilters);
       const bookingData = await fetchOwnerBookings(toBookingParams(bookingFilters));
       setParkings(bookingData.parkings);
       setOwnerBookings(bookingData.bookings);
       setOwnerSummary(bookingData.summary);
+      console.log('[OwnerDashboard] Owner data loaded:', {
+        bookings: bookingData.bookings.length,
+        parkings: bookingData.parkings.length
+      });
       writeOwnerCache({
         ownerBookings: bookingData.bookings,
         ownerSummary: bookingData.summary,
@@ -65,12 +70,14 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
     setError('');
 
     try {
+      console.log('[OwnerDashboard] Creating parking...');
       let parking = await createParking(payload);
 
       if (imageFiles.length > 0) {
         parking = await uploadParkingImages(parking.id, imageFiles);
       }
 
+      console.log('[OwnerDashboard] Parking created, refreshing data...');
       await loadMine();
       setEditingParking(parking);
       return parking;
@@ -84,12 +91,14 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
     setError('');
 
     try {
+      console.log('[OwnerDashboard] Updating parking:', editingParking.id);
       let parking = await updateParking(editingParking.id, payload);
 
       if (imageFiles.length > 0) {
         parking = await uploadParkingImages(parking.id, imageFiles);
       }
 
+      console.log('[OwnerDashboard] Parking updated, refreshing data...');
       await loadMine();
       setEditingParking(null);
       return parking;
@@ -103,7 +112,9 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
     setError('');
 
     try {
+      console.log('[OwnerDashboard] Deleting parking:', id);
       await deleteParking(id);
+      console.log('[OwnerDashboard] Parking deleted, refreshing data...');
       await loadMine();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to delete parking listing'));
@@ -114,7 +125,9 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
     setError('');
 
     try {
+      console.log('[OwnerDashboard] Completing booking:', id);
       await completeOwnerBooking(id);
+      console.log('[OwnerDashboard] Booking completed, refreshing data...');
       await loadMine();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to complete booking'));
@@ -155,9 +168,24 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
       <div className="app-panel">
-        <p className="text-sm font-medium uppercase text-brand-700">Owner control panel</p>
-        <h1 className="app-heading mt-2 text-3xl font-bold">Run each space like a small business</h1>
-        <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Monitor demand, update listings, resolve active reservations, and keep revenue visibility tight from one operational workspace.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium uppercase text-brand-700">Owner control panel</p>
+            <h1 className="app-heading mt-2 text-3xl font-bold">Run each space like a small business</h1>
+            <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Monitor demand, update listings, resolve active reservations, and keep revenue visibility tight from one operational workspace.</p>
+          </div>
+          <button
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            disabled={isLoading}
+            onClick={loadMine}
+            type="button"
+          >
+            <svg className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}

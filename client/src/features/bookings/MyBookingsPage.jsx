@@ -12,6 +12,7 @@ import {
 } from './bookingUtils.js';
 import { fetchReviewedBookingIds } from '../reviews/reviewApi.js';
 import { ReviewForm } from '../reviews/ReviewForm.jsx';
+import { useUserBookings } from '../../hooks/useDataSync.js';
 
 // Status badge styles — keyed by computedStatus
 const statusConfig = {
@@ -48,11 +49,12 @@ export function MyBookingsPage() {
     setIsLoading(true);
 
     try {
+      console.log('[MyBookingsPage] Loading bookings...');
       const bookingRows = await fetchMyBookings();
       
       // Debug log to verify bookingCode is present
       if (bookingRows.length > 0) {
-        console.log('Sample booking data:', bookingRows[0]);
+        console.log('[MyBookingsPage] Sample booking data:', bookingRows[0]);
       }
       
       const parkingIds = [...new Set(bookingRows.map((b) => b.parking))];
@@ -68,6 +70,7 @@ export function MyBookingsPage() {
       const parkingMap = Object.fromEntries(parkingPairs);
       const enriched = bookingRows.map((b) => ({ ...b, parkingDetail: parkingMap[b.parking] }));
       setBookings(enriched);
+      console.log('[MyBookingsPage] Bookings loaded:', enriched.length);
 
       // Check which completed bookings already have a review.
       // Include both DB-completed and time-expired (computedStatus) bookings.
@@ -99,11 +102,16 @@ export function MyBookingsPage() {
     setError('');
 
     try {
+      console.log('[MyBookingsPage] Cancelling booking:', cancelTarget.id);
       const updated = await cancelBooking(cancelTarget.id);
       setBookings((current) =>
         current.map((b) => (b.id === updated.id ? { ...b, ...updated } : b))
       );
       setCancelTarget(null);
+      console.log('[MyBookingsPage] Booking cancelled, data updated');
+      
+      // Refetch to ensure data consistency
+      await loadBookings();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to cancel this booking'));
     }
@@ -117,12 +125,25 @@ export function MyBookingsPage() {
           <p className="text-sm font-medium uppercase text-brand-700">Reservations</p>
           <h1 className="mt-2 text-3xl font-bold" style={{ color: 'var(--app-text)' }}>My Bookings</h1>
         </div>
-        <Link
-          className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-          to="/parkings"
-        >
-          Find parking
-        </Link>
+        <div className="flex gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            disabled={isLoading}
+            onClick={loadBookings}
+            type="button"
+          >
+            <svg className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <Link
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+            to="/parkings"
+          >
+            Find parking
+          </Link>
+        </div>
       </div>
 
       {error ? (

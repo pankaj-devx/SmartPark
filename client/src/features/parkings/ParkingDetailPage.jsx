@@ -58,6 +58,7 @@ export function ParkingDetailPage() {
     loadReviews();
   }, [id]);
   async function handleBookingSuccess(booking) {
+    console.log('[ParkingDetailPage] Booking successful, refreshing data...');
     clearGuestBookingIntent(id);
     setIsBookingOpen(false);
 
@@ -67,7 +68,12 @@ export function ParkingDetailPage() {
     try {
       const refreshed = await fetchParkingById(id);
       setParking(refreshed);
-    } catch {
+      console.log('[ParkingDetailPage] Parking data refreshed:', {
+        availableSlots: refreshed.availableSlots,
+        totalSlots: refreshed.totalSlots
+      });
+    } catch (err) {
+      console.error('[ParkingDetailPage] Failed to refresh parking data:', err);
       // Fallback: apply optimistic decrement if the refetch fails
       setParking((current) =>
         current

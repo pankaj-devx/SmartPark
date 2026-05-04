@@ -127,47 +127,35 @@ export async function reconcileExpiredBookings(parkingId, deps = {}) {
 }
 
 /**
- * Compute the real-time available slot count for a parking at the current
- * moment by counting active bookings that overlap right now.
+ * Compute the real-time available slot count for a parking by reading
+ * the stored availableSlots field from the database.
  *
- * Used to enrich list responses (search, nearby) without modifying the DB.
- * The stored availableSlots field is kept for DB-level filtering/sorting;
- * this value is what clients should display.
+ * The stored availableSlots field is automatically maintained by the booking
+ * system (decremented on booking creation, incremented on cancellation/completion).
+ * This ensures accurate availability accounting for all active bookings.
+ *
+ * Used to enrich list responses (search, nearby) without complex aggregations.
  *
  * @param {string|ObjectId} parkingId
- * @param {number} totalSlots
+ * @param {number} totalSlots - Fallback if parking not found
  * @param {object} deps
  * @returns {Promise<number>}
  */
 export async function computeLiveAvailableSlots(parkingId, totalSlots, deps = {}) {
-  const BookingModel = deps.BookingModel ?? Booking;
+  const ParkingModel = deps.ParkingModel ?? Parking;
 
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const parking = await ParkingModel.findById(parkingId).select('availableSlots').lean();
 
-  const result = await BookingModel.aggregate([
-    {
-      $match: {
-        parking: new mongoose.Types.ObjectId(parkingId.toString()),
-        status: { $in: ACTIVE_BOOKING_STATUSES },
-        bookingDate: todayStr,
-        startTime: { $lte: currentTime },
-        endTime: { $gt: currentTime }
-      }
-    },
-    {
-      $group: { _id: null, occupiedSlots: { $sum: '$slotCount' } }
-    }
-  ]);
-
-  const occupiedNow = result[0]?.occupiedSlots ?? 0;
-  return Math.max(0, totalSlots - occupiedNow);
+  return parking?.availableSlots ?? totalSlots;
 }
 
 /**
  * Compute live available slots for multiple parkings in a single aggregation.
  * Returns a Map of parkingId (string) → liveAvailableSlots (number).
+ *
+ * This calculates the ACTUAL available slots by subtracting ALL active bookings
+ * (both ongoing and upcoming) from the total slots. This ensures the owner
+ * dashboard shows accurate availability accounting for future reservations.
  *
  * @param {Array<{id: string, totalSlots: number}>} parkings
  * @param {object} deps
@@ -176,36 +164,18 @@ export async function computeLiveAvailableSlots(parkingId, totalSlots, deps = {}
 export async function computeLiveAvailableSlotsForMany(parkings, deps = {}) {
   if (parkings.length === 0) return new Map();
 
-  const BookingModel = deps.BookingModel ?? Booking;
-
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const ParkingModel = deps.ParkingModel ?? Parking;
 
   const parkingIds = parkings.map((p) => new mongoose.Types.ObjectId(p.id.toString()));
 
-  const occupied = await BookingModel.aggregate([
-    {
-      $match: {
-        parking: { $in: parkingIds },
-        status: { $in: ACTIVE_BOOKING_STATUSES },
-        bookingDate: todayStr,
-        startTime: { $lte: currentTime },
-        endTime: { $gt: currentTime }
-      }
-    },
-    {
-      $group: { _id: '$parking', occupiedSlots: { $sum: '$slotCount' } }
-    }
-  ]);
-
-  const occupiedMap = new Map(occupied.map((r) => [r._id.toString(), r.occupiedSlots]));
+  // Get the actual availableSlots from the database (which accounts for all active bookings)
+  const parkingDocs = await ParkingModel.find({ _id: { $in: parkingIds } })
+    .select('_id availableSlots')
+    .lean();
 
   const result = new Map();
-  for (const p of parkings) {
-    const idStr = p.id.toString();
-    const occupiedNow = occupiedMap.get(idStr) ?? 0;
-    result.set(idStr, Math.max(0, p.totalSlots - occupiedNow));
+  for (const doc of parkingDocs) {
+    result.set(doc._id.toString(), doc.availableSlots);
   }
 
   return result;

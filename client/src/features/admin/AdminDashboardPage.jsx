@@ -107,12 +107,18 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setIsLoading(true);
 
     try {
+      console.log('[AdminDashboard] Loading admin data...');
       const [dashboardData, bookingRows] = await Promise.all([
         fetchAdminDashboard(),
         fetchAdminBookings(bookingStatus ? { status: bookingStatus } : {})
       ]);
       setDashboard(dashboardData);
       setBookings(bookingRows);
+      console.log('[AdminDashboard] Admin data loaded:', {
+        bookings: bookingRows.length,
+        users: dashboardData.users.length,
+        parkings: Object.values(dashboardData.parkings).flat().length
+      });
       writeAdminCache({
         dashboard: dashboardData,
         bookings: bookingRows
@@ -132,10 +138,15 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setError('');
 
     try {
+      console.log('[AdminDashboard] Applying parking update...');
       const parking = await action();
       setDashboard((current) => replaceParking(current, parking));
       setRejectTarget(null);
       setRejectReason('');
+      console.log('[AdminDashboard] Parking updated, refreshing data...');
+      
+      // Refetch to ensure consistency
+      await loadDashboard();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to update listing moderation status'));
     }
@@ -145,8 +156,10 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setError('');
 
     try {
+      console.log('[AdminDashboard] Blocking user:', user.id);
       const updated = await blockAdminUser(user.id);
       setDashboard((current) => replaceUser(current, updated));
+      console.log('[AdminDashboard] User blocked');
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to block user'));
     }
@@ -156,8 +169,10 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setError('');
 
     try {
+      console.log('[AdminDashboard] Unblocking user:', user.id);
       const updated = await unblockAdminUser(user.id);
       setDashboard((current) => replaceUser(current, updated));
+      console.log('[AdminDashboard] User unblocked');
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to unblock user'));
     }
@@ -167,8 +182,10 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setError('');
 
     try {
+      console.log('[AdminDashboard] Deleting parking:', parking.id);
       await deleteAdminParking(parking.id);
       setDashboard((current) => removeParking(current, parking.id));
+      console.log('[AdminDashboard] Parking deleted');
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to delete parking listing'));
     }
@@ -178,8 +195,13 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     setError('');
 
     try {
+      console.log('[AdminDashboard] Cancelling booking:', booking.id);
       const updated = await cancelAdminBooking(booking.id);
       setBookings((current) => current.map((b) => (b.id === updated.id ? updated : b)));
+      console.log('[AdminDashboard] Booking cancelled, refreshing data...');
+      
+      // Refetch to ensure consistency
+      await loadDashboard();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to cancel booking'));
     }
@@ -188,9 +210,24 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
   return (
     <section className="mx-auto max-w-7xl px-4 py-8">
       <div className="app-panel">
-        <p className="text-sm font-medium uppercase text-brand-700">Admin control panel</p>
-        <h1 className="app-heading mt-2 text-3xl font-bold">Operate the marketplace with signal, not clutter</h1>
-        <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Moderation, booking oversight, reporting, and user review stay separated into focused surfaces so platform decisions are faster and easier to trust.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium uppercase text-brand-700">Admin control panel</p>
+            <h1 className="app-heading mt-2 text-3xl font-bold">Operate the marketplace with signal, not clutter</h1>
+            <p className="app-copy mt-2 max-w-2xl text-sm leading-6">Moderation, booking oversight, reporting, and user review stay separated into focused surfaces so platform decisions are faster and easier to trust.</p>
+          </div>
+          <button
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            disabled={isLoading}
+            onClick={loadDashboard}
+            type="button"
+          >
+            <svg className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
