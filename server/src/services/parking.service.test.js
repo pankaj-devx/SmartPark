@@ -154,7 +154,10 @@ test('public list returns only approved listing query results', async () => {
     }
   };
 
-  const result = await listPublicParkings({ page: 1, limit: 10, sort: 'newest' }, { ParkingModel });
+  const result = await listPublicParkings(
+    { page: 1, limit: 10, sort: 'newest' },
+    { ParkingModel, BookingModel: makeLiveSlotBookingModel(), ReviewModel: makeReviewStatsModel() }
+  );
 
   assert.equal(receivedFilter.verificationStatus, 'approved');
   assert.equal(receivedFilter.isActive, true);
@@ -162,6 +165,126 @@ test('public list returns only approved listing query results', async () => {
   assert.deepEqual(receivedSort, { createdAt: -1, _id: 1 });
   assert.equal(result.parkings.length, 1);
   assert.equal(result.pagination.total, 1);
+});
+
+test('public list adds smart recommendation score and labels without changing pagination', async () => {
+  const cheapNearby = makeParking({
+    ...buildParkingCreatePayload({ ...validInput, title: 'Cheap Nearby', hourlyPrice: 30, totalSlots: 10 }, ownerId),
+    id: '507f1f77bcf86cd799439131',
+    verificationStatus: 'approved',
+    availableSlots: 8,
+    distance: 100
+  });
+  const expensiveFar = makeParking({
+    ...buildParkingCreatePayload({ ...validInput, title: 'Expensive Far', hourlyPrice: 200, totalSlots: 10 }, ownerId),
+    id: '507f1f77bcf86cd799439132',
+    verificationStatus: 'approved',
+    availableSlots: 1,
+    distance: 5000
+  });
+
+  const ParkingModel = {
+    find() {
+      return {
+        select() {
+          return this;
+        },
+        sort() {
+          return this;
+        },
+        skip() {
+          return this;
+        },
+        limit() {
+          return {
+            lean: async () => [expensiveFar, cheapNearby]
+          };
+        }
+      };
+    },
+    async countDocuments() {
+      return 2;
+    }
+  };
+
+  const result = await listPublicParkings(
+    { page: 1, limit: 10, sort: 'newest' },
+    {
+      ParkingModel,
+      BookingModel: makeLiveSlotBookingModel([{ _id: '507f1f77bcf86cd799439132', occupiedSlots: 9 }]),
+      ReviewModel: makeReviewStatsModel([{ _id: '507f1f77bcf86cd799439131', averageRating: 4.8, totalReviews: 12 }])
+    }
+  );
+
+  assert.equal(result.parkings.length, 2);
+  assert.equal(result.pagination.total, 2);
+  assert.equal(result.parkings[0].title, 'Cheap Nearby');
+  assert.equal(result.parkings[1].title, 'Expensive Far');
+  assert.equal(typeof result.parkings[0].score, 'number');
+  assert.ok(result.parkings[0].score >= 0 && result.parkings[0].score <= 1);
+  assert.ok(!Number.isNaN(result.parkings[0].score));
+  assert.deepEqual(result.parkings[0].labels, ['Top Rated', 'Recommended', 'Best Value']);
+  assert.equal(
+    result.parkings[0].explanation,
+    'very close to your location, highly rated by users, affordable pricing, good availability'
+  );
+  assert.deepEqual(result.parkings[1].labels, ['Filling Fast']);
+});
+
+test('public list uses stable smart recommendation tie breakers', async () => {
+  const lowerRated = makeParking({
+    ...buildParkingCreatePayload({ ...validInput, title: 'Lower Rated', hourlyPrice: 200, totalSlots: 10 }, ownerId),
+    id: '507f1f77bcf86cd799439133',
+    verificationStatus: 'approved',
+    availableSlots: 5,
+    distance: 100
+  });
+  const higherRated = makeParking({
+    ...buildParkingCreatePayload({ ...validInput, title: 'Higher Rated', hourlyPrice: 50, totalSlots: 10 }, ownerId),
+    id: '507f1f77bcf86cd799439134',
+    verificationStatus: 'approved',
+    availableSlots: 5,
+    distance: 200
+  });
+
+  const ParkingModel = {
+    find() {
+      return {
+        select() {
+          return this;
+        },
+        sort() {
+          return this;
+        },
+        skip() {
+          return this;
+        },
+        limit() {
+          return {
+            lean: async () => [lowerRated, higherRated]
+          };
+        }
+      };
+    },
+    async countDocuments() {
+      return 2;
+    }
+  };
+
+  const result = await listPublicParkings(
+    { page: 1, limit: 10, sort: 'newest' },
+    {
+      ParkingModel,
+      BookingModel: makeLiveSlotBookingModel(),
+      ReviewModel: makeReviewStatsModel([
+        { _id: '507f1f77bcf86cd799439133', averageRating: 4, totalReviews: 4 },
+        { _id: '507f1f77bcf86cd799439134', averageRating: 5, totalReviews: 8 }
+      ])
+    }
+  );
+
+  assert.equal(result.parkings[0].title, 'Higher Rated');
+  assert.equal(result.parkings[0].score, result.parkings[1].score);
 });
 
 test('public list caps deep pagination skip for performance safety', async () => {
@@ -197,6 +320,37 @@ test('public list caps deep pagination skip for performance safety', async () =>
   assert.equal(receivedSkip, 5000);
 });
 
+test('public list handles empty recommendation set without NaN scores', async () => {
+  const ParkingModel = {
+    find() {
+      return {
+        select() {
+          return this;
+        },
+        sort() {
+          return this;
+        },
+        skip() {
+          return this;
+        },
+        limit() {
+          return {
+            lean: async () => []
+          };
+        }
+      };
+    },
+    async countDocuments() {
+      return 0;
+    }
+  };
+
+  const result = await listPublicParkings({ page: 1, limit: 10, sort: 'newest' }, { ParkingModel, BookingModel: makeLiveSlotBookingModel() });
+
+  assert.deepEqual(result.parkings, []);
+  assert.equal(result.pagination.total, 0);
+});
+
 test('nearby search uses geoNear, returns distance, and keeps approved visibility', async () => {
   let receivedPipeline;
 
@@ -227,7 +381,7 @@ test('nearby search uses geoNear, returns distance, and keeps approved visibilit
       limit: 10,
       sort: 'nearest'
     },
-    { ParkingModel }
+    { ParkingModel, BookingModel: makeLiveSlotBookingModel(), ReviewModel: makeReviewStatsModel() }
   );
 
   assert.equal(receivedPipeline[0].$geoNear.distanceField, 'distance');
@@ -358,7 +512,7 @@ test('owner listing history includes rejected listings with rejection reason', a
     }
   };
 
-  const parkings = await listOwnerParkings(user, { ParkingModel });
+  const parkings = await listOwnerParkings(user, { ParkingModel, BookingModel: makeLiveSlotBookingModel() });
 
   assert.equal(parkings[0].verificationStatus, 'rejected');
   assert.equal(parkings[0].rejectionReason, 'Missing access details');
@@ -515,10 +669,37 @@ function makeUser(role, id) {
   };
 }
 
+function makeLiveSlotBookingModel(occupied = []) {
+  return {
+    async aggregate() {
+      return occupied.map((item) => ({
+        _id: {
+          toString: () => item._id
+        },
+        occupiedSlots: item.occupiedSlots
+      }));
+    }
+  };
+}
+
+function makeReviewStatsModel(stats = []) {
+  return {
+    async aggregate() {
+      return stats.map((item) => ({
+        _id: {
+          toString: () => item._id
+        },
+        averageRating: item.averageRating,
+        totalReviews: item.totalReviews
+      }));
+    }
+  };
+}
+
 function makeParking(overrides = {}) {
   return {
     _id: {
-      toString: () => parkingId
+      toString: () => overrides.id ?? parkingId
     },
     title: overrides.title,
     description: overrides.description,

@@ -1,11 +1,18 @@
 import mongoose from 'mongoose';
 import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js';
 import { Parking } from '../models/parking.model.js';
+import { Review } from '../models/review.model.js';
 import { computeLiveAvailableSlotsForMany, reconcileExpiredBookings } from './booking.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 const MAX_PARKING_IMAGES = 5;
 const MAX_PAGINATION_SKIP = 5000;
+const WEIGHTS = {
+  distance: 0.4,
+  price: 0.2,
+  rating: 0.25,
+  availability: 0.15
+};
 const PARKING_LIST_PROJECTION = {
   title: 1,
   description: 1,
@@ -80,6 +87,9 @@ export function serializeParking(parking) {
     imageCount: parking.imageCount ?? parking.images?.length ?? 0,
     distance: parking.distance,
     rankingScore: parking.rankingScore,
+    score: parking.score,
+    labels: parking.labels ?? [],
+    explanation: parking.explanation,
     owner: parking.owner?._id?.toString?.() ?? parking.owner?.toString?.(),
     verificationStatus: parking.verificationStatus,
     rejectionReason: parking.rejectionReason,
@@ -246,12 +256,16 @@ export async function listPublicParkings(query, deps = {}) {
     deps
   );
 
-  return {
-    parkings: rankedParkings.map((p) => {
+  const serializedParkings = rankedParkings.map((p) => {
       const serialized = serializeParking(p);
       const live = liveSlots.get(p._id.toString());
       return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
-    }),
+    });
+
+  const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
+
+  return {
+    parkings: applySmartRecommendations(reviewedParkings),
     pagination: {
       page,
       limit,
@@ -301,12 +315,16 @@ export async function listNearbyParkings(query, deps = {}) {
     deps
   );
 
-  return {
-    parkings: rankedParkings.map((p) => {
+  const serializedParkings = rankedParkings.map((p) => {
       const serialized = serializeParking(p);
       const live = liveSlots.get(p._id.toString());
       return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
-    }),
+    });
+
+  const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
+
+  return {
+    parkings: applySmartRecommendations(reviewedParkings),
     pagination: {
       page,
       limit,
@@ -676,6 +694,172 @@ function calculateRankingScore(parking) {
   const popularityScore = Math.min(parking.popularityScore ?? 0, 100) * 0.15;
 
   return Number((distanceScore + priceScore + availabilityScore + popularityScore).toFixed(2));
+}
+
+function normalize(value, min, max) {
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    return 0;
+  }
+
+  return (value - min) / (max - min);
+}
+
+function safeNumber(val, fallback = 0) {
+  const fallbackNumber = Number.isFinite(fallback) ? fallback : 0;
+  return Number.isFinite(val) ? val : fallbackNumber;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, safeNumber(value, 0)));
+}
+
+function computeParkingScore(parking, context) {
+  const maxDistance = Math.max(1, safeNumber(context.maxDistance, 1));
+  const maxPrice = Math.max(1, safeNumber(context.maxPrice, 1));
+
+  const distance = Math.max(0, safeNumber(parking.distance, maxDistance));
+  const price = Math.max(0, safeNumber(parking.pricePerHour ?? parking.hourlyPrice, maxPrice));
+  const rating = Math.max(0, Math.min(5, safeNumber(parking.averageRating, 0)));
+  const totalSlots = Math.max(0, safeNumber(parking.totalSlots, 0));
+  const availableSlots = Math.max(0, safeNumber(parking.availableSlots, 0));
+
+  const distanceScore = 1 - clamp01(normalize(distance, 0, maxDistance));
+  const priceScore = 1 - clamp01(normalize(price, 0, maxPrice));
+  const ratingScore = clamp01(rating / 5);
+  const availabilityScore = totalSlots > 0 ? clamp01(availableSlots / totalSlots) : 0;
+
+  const score =
+    WEIGHTS.distance * distanceScore +
+    WEIGHTS.price * priceScore +
+    WEIGHTS.rating * ratingScore +
+    WEIGHTS.availability * availabilityScore;
+
+  return Number(clamp01(score).toFixed(3));
+}
+
+function addLabels(parking) {
+  const labels = [];
+
+  if ((parking.averageRating || 0) >= 4.5) {
+    labels.push('Top Rated');
+  }
+
+  if (parking.score >= 0.7) {
+    labels.push('Recommended');
+  }
+
+  if ((parking.pricePerHour ?? parking.hourlyPrice ?? 0) < 50) {
+    labels.push('Best Value');
+  }
+
+  if ((parking.availableSlots || 0) <= 2) {
+    labels.push('Filling Fast');
+  }
+
+  return labels;
+}
+
+function generateExplanation(parking) {
+  const reasons = [];
+  const distanceKm = getDistanceInKm(parking.distance);
+  const averageRating = safeNumber(parking.averageRating, 0);
+  const pricePerHour = safeNumber(parking.pricePerHour ?? parking.hourlyPrice, Number.MAX_SAFE_INTEGER);
+  const availableSlots = safeNumber(parking.availableSlots, 0);
+
+  if (distanceKm < 1) {
+    reasons.push('very close to your location');
+  }
+
+  if (averageRating >= 4.5) {
+    reasons.push('highly rated by users');
+  }
+
+  if (pricePerHour < 50) {
+    reasons.push('affordable pricing');
+  }
+
+  if (availableSlots > 5) {
+    reasons.push('good availability');
+  }
+
+  return reasons.length > 0
+    ? reasons.join(', ')
+    : 'balanced option';
+}
+
+function getDistanceInKm(distance) {
+  const safeDistance = Math.max(0, safeNumber(distance, Number.MAX_SAFE_INTEGER));
+  return safeDistance > 50 ? safeDistance / 1000 : safeDistance;
+}
+
+function applySmartRecommendations(parkings) {
+  if (!parkings.length) {
+    return [];
+  }
+
+  const distances = parkings.map((p) => Math.max(0, safeNumber(p.distance, 0)));
+  const prices = parkings.map((p) => Math.max(0, safeNumber(p.pricePerHour ?? p.hourlyPrice, 0)));
+
+  const maxDistance = Math.max(...distances, 1);
+  const maxPrice = Math.max(...prices, 1);
+
+  const context = { maxDistance, maxPrice };
+
+  const scoredParkings = parkings.map((p) => {
+    const score = computeParkingScore(p, context);
+    const scoredParking = {
+      ...p,
+      score
+    };
+
+    return {
+      ...scoredParking,
+      labels: addLabels(scoredParking),
+      explanation: generateExplanation(scoredParking)
+    };
+  });
+
+  return scoredParkings.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if ((b.averageRating || 0) !== (a.averageRating || 0)) {
+      return (b.averageRating || 0) - (a.averageRating || 0);
+    }
+    return (a.distance || 0) - (b.distance || 0);
+  });
+}
+
+async function enrichParkingsWithReviewStats(parkings, deps = {}) {
+  if (!parkings.length) {
+    return [];
+  }
+
+  const ReviewModel = deps.ReviewModel ?? Review;
+  const parkingIds = parkings.map((parking) => new mongoose.Types.ObjectId(parking.id));
+  const stats = await ReviewModel.aggregate([
+    { $match: { parking: { $in: parkingIds } } },
+    {
+      $group: {
+        _id: '$parking',
+        averageRating: { $avg: '$rating' },
+        totalReviews: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const statsMap = new Map(
+    stats.map((item) => [
+      item._id.toString(),
+      {
+        averageRating: item.averageRating ? Number(item.averageRating.toFixed(1)) : 0,
+        totalReviews: item.totalReviews ?? 0
+      }
+    ])
+  );
+
+  return parkings.map((parking) => ({
+    ...parking,
+    ...(statsMap.get(parking.id) ?? { averageRating: 0, totalReviews: 0 })
+  }));
 }
 
 function getCurrentTime(now = new Date()) {

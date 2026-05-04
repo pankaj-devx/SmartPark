@@ -27,6 +27,9 @@ test('admin dashboard returns moderation summaries and grouped parkings', async 
     }
   };
   const BookingModel = {
+    async aggregate() {
+      return [];
+    },
     async countDocuments() {
       return 4;
     }
@@ -66,7 +69,7 @@ test('admin parkings are grouped by verification status', async () => {
     }
   };
 
-  const parkings = await listAdminParkings({ ParkingModel });
+  const parkings = await listAdminParkings({ ParkingModel, BookingModel: makeLiveSlotBookingModel() });
 
   assert.equal(parkings.pending.length, 1);
   assert.equal(parkings.approved.length, 1);
@@ -125,6 +128,14 @@ function sortableLean(rows) {
       return {
         lean: async () => rows
       };
+    }
+  };
+}
+
+function makeLiveSlotBookingModel() {
+  return {
+    async aggregate() {
+      return [];
     }
   };
 }

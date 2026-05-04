@@ -11,6 +11,9 @@ test('owner only sees bookings for own parking listings', async () => {
   let receivedFilter;
   const ParkingModel = makeParkingModel([makeParking({ id: parkingId, owner: ownerId })]);
   const BookingModel = {
+    async aggregate() {
+      return [];
+    },
     find(filter) {
       receivedFilter = filter;
       return sortableLean([makeBooking({ parking: parkingId })]);
@@ -37,6 +40,9 @@ test('owner operations summary calculates occupancy and earnings', async () => {
   const today = now.toISOString().slice(0, 10);
   const ParkingModel = makeParkingModel([makeParking({ id: parkingId, totalSlots: 10, owner: ownerId })]);
   const BookingModel = {
+    async aggregate() {
+      return [{ _id: parkingId, occupiedSlots: 3 }];
+    },
     find() {
       return sortableLean([
         makeBooking({
@@ -62,7 +68,8 @@ test('owner operations summary calculates occupancy and earnings', async () => {
 });
 
 test('owner can mark own active booking completed and slots restore', async () => {
-  const booking = makeBooking({ parking: parkingId, status: 'confirmed', slotCount: 2 });
+  const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const booking = makeBooking({ parking: parkingId, bookingDate: futureDate, endTime: '23:59', status: 'confirmed', slotCount: 2 });
   let restoredSlots = 0;
   const BookingModel = {
     async findById() {
@@ -76,6 +83,9 @@ test('owner can mark own active booking completed and slots restore', async () =
     },
     async findByIdAndUpdate(_id, update) {
       restoredSlots = update.$inc.availableSlots;
+    },
+    async updateOne() {
+      return {};
     }
   };
 

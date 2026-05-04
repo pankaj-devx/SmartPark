@@ -134,6 +134,12 @@ function RecommendationCard({ parking, rank, isSelected, onSelect }) {
         </span>
       ) : null}
 
+      {parking.explanation ? (
+        <p className="app-copy mb-2 text-xs leading-5">
+          {formatExplanation(parking.explanation)}
+        </p>
+      ) : null}
+
       {/* Title */}
       <p className="app-heading line-clamp-2 text-sm font-semibold leading-snug">
         {parking.title}
@@ -194,4 +200,8 @@ function RecommendationCard({ parking, rank, isSelected, onSelect }) {
       </div>
     </article>
   );
+}
+
+function formatExplanation(explanation) {
+  return explanation.charAt(0).toUpperCase() + explanation.slice(1);
 }

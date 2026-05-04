@@ -180,11 +180,12 @@ export function SearchResultsPage() {
 
           {!isLoading && parkings.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
-              {parkings.map((parking) => (
+              {parkings.map((parking, index) => (
                 <ParkingResultCard 
                   bookingParams={getBookingParams(filters)} 
                   key={parking.id} 
                   parking={parking} 
+                  isBestMatch={index === 0}
                   isAuthenticated={isAuthenticated}
                   setAuthModalConfig={setAuthModalConfig}
                 />
@@ -211,11 +212,12 @@ export function SearchResultsPage() {
   );
 }
 
-function ParkingResultCard({ bookingParams, parking, isAuthenticated, setAuthModalConfig }) {
+function ParkingResultCard({ bookingParams, parking, isBestMatch, isAuthenticated, setAuthModalConfig }) {
   const detailSearch = new URLSearchParams(bookingParams).toString();
   const detailPath = detailSearch ? `/parkings/${parking.id}?${detailSearch}` : `/parkings/${parking.id}`;
   const reservePath = buildDiscoveryReservePath(parking.id, bookingParams);
   const [isSaved, setIsSaved] = useState(() => isSavedParking(parking.id));
+  const recommendationLabels = Array.isArray(parking.labels) ? parking.labels : [];
 
   function handleToggleSaved() {
     if (!isAuthenticated) {
@@ -235,7 +237,7 @@ function ParkingResultCard({ bookingParams, parking, isAuthenticated, setAuthMod
   }
 
   return (
-    <article className="app-panel overflow-hidden p-0">
+    <article className={`app-panel overflow-hidden p-0 ${isBestMatch ? 'border-brand-300 shadow-lg shadow-brand-100/70' : ''}`}>
       <div className="relative" style={{ background: 'var(--app-surface-muted)' }}>
         {parking.coverImage ? (
           <img alt={parking.coverImage.caption || parking.title} className="aspect-video w-full object-cover" src={parking.coverImage.url} />
@@ -254,8 +256,27 @@ function ParkingResultCard({ bookingParams, parking, isAuthenticated, setAuthMod
               })()
             : `Rs ${parking.hourlyPrice}/hr`}
         </p>
+        {isBestMatch ? (
+          <p className="absolute left-3 top-3 rounded-md bg-brand-600 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white shadow-sm">
+            Best Match
+          </p>
+        ) : null}
       </div>
       <div className="p-5">
+      {recommendationLabels.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold">
+          {recommendationLabels.map((label) => (
+            <span className="rounded-md border border-brand-100 bg-brand-50 px-2 py-1 text-brand-700" key={label}>
+              {formatRecommendationLabel(label)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {parking.explanation ? (
+        <p className="app-copy mb-3 text-sm leading-6">
+          {formatAiExplanation(parking.explanation)}
+        </p>
+      ) : null}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="app-heading text-lg font-semibold">{parking.title}</h2>
@@ -355,4 +376,19 @@ function buildDiscoveryReservePath(parkingId, bookingParams) {
   });
 
   return `/parkings/${parkingId}?${params.toString()}`;
+}
+
+function formatRecommendationLabel(label) {
+  const labelMap = {
+    Recommended: '🔥 Recommended',
+    'Top Rated': '⭐ Top Rated',
+    'Best Value': '💰 Best Value',
+    'Filling Fast': '⚡ Filling Fast'
+  };
+
+  return labelMap[label] ?? label;
+}
+
+function formatAiExplanation(explanation) {
+  return explanation.charAt(0).toUpperCase() + explanation.slice(1);
 }
