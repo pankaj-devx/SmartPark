@@ -30,6 +30,14 @@ const parkingImageSchema = new mongoose.Schema(
 
 const parkingSchema = new mongoose.Schema(
   {
+    parkingCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      trim: true,
+      uppercase: true
+    },
     title: {
       type: String,
       required: true,

@@ -332,15 +332,31 @@ function AdminBookings({ bookingSearch, bookingStatus, filteredBookings, onCance
       <div className="grid gap-3">
         {filteredBookings.map((booking) => (
           <article className="rounded-lg border border-slate-200 p-4" key={booking.id}>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="font-semibold text-slate-950">#{booking.id} - {booking.bookingDate} - {booking.startTime}-{booking.endTime}</p>
-                <p className="mt-1 text-sm text-slate-600">{booking.parkingTitle || booking.parking} - {booking.userName || booking.user}</p>
-                {booking.userEmail ? <p className="mt-1 text-xs text-slate-500">{booking.userEmail}</p> : null}
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="flex-1">
+                {booking.bookingCode ? (
+                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-1.5 border border-blue-200">
+                    <span className="text-xs font-medium text-blue-600">Booking Code:</span>
+                    <span className="text-sm font-bold text-blue-900">{booking.bookingCode}</span>
+                  </div>
+                ) : null}
+                <p className="font-semibold text-slate-950">#{booking.id}</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  <span className="font-medium">Date:</span> {booking.bookingDate} | <span className="font-medium">Time:</span> {booking.startTime}-{booking.endTime}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  <span className="font-medium">Parking:</span> {booking.parkingTitle || booking.parking}
+                  {booking.parkingCity && booking.parkingState ? ` (${booking.parkingCity}, ${booking.parkingState})` : ''}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  <span className="font-medium">User:</span> {booking.userName || booking.user}
+                  {booking.userEmail ? ` - ${booking.userEmail}` : ''}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className={`rounded-md px-2 py-1 font-semibold capitalize ${statusStyles[booking.status] ?? statusStyles.completed}`}>{booking.status}</span>
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">Rs {booking.totalAmount}</span>
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">{booking.vehicleType}</span>
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">{booking.slotCount} slots</span>
                 {(booking.status === 'pending' || booking.status === 'confirmed') ? (
                   <button

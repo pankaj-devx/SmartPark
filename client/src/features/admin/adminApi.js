@@ -49,3 +49,8 @@ export async function cancelAdminBooking(id) {
   const response = await apiClient.patch(`/admin/bookings/${id}/cancel`);
   return response.data.data.booking;
 }
+
+export async function verifyAdminBooking(bookingCode) {
+  const response = await apiClient.post('/admin/bookings/verify', { bookingCode });
+  return response.data.data.booking;
+}

@@ -49,6 +49,12 @@ export function MyBookingsPage() {
 
     try {
       const bookingRows = await fetchMyBookings();
+      
+      // Debug log to verify bookingCode is present
+      if (bookingRows.length > 0) {
+        console.log('Sample booking data:', bookingRows[0]);
+      }
+      
       const parkingIds = [...new Set(bookingRows.map((b) => b.parking))];
       const parkingPairs = await Promise.all(
         parkingIds.map(async (parkingId) => {
@@ -268,7 +274,7 @@ function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
     <article className="flex flex-col rounded-xl border bg-white shadow-sm" style={{ borderColor: 'var(--app-border)' }}>
       {/* Card header */}
       <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--app-border)' }}>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <ParkingCircle className="h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
             <h3 className="truncate font-semibold" style={{ color: 'var(--app-text)' }}>
@@ -279,6 +285,12 @@ function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
             <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--app-text-muted)' }}>
               {[parking.address, parking.city].filter(Boolean).join(', ')}
             </p>
+          ) : null}
+          {booking.bookingCode ? (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
+              <span className="text-xs font-medium text-slate-500">Booking Code:</span>
+              <span className="text-xs font-semibold text-slate-900">{booking.bookingCode}</span>
+            </div>
           ) : null}
         </div>
         <StatusBadge status={computedStatus} />

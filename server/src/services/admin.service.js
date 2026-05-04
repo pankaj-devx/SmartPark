@@ -144,11 +144,15 @@ function serializeAdminUser(user) {
 function serializeAdminBooking(booking) {
   return {
     id: booking._id?.toString?.() ?? booking.id,
+    bookingCode: booking.bookingCode,
     user: booking.user?._id?.toString?.() ?? booking.user?.toString?.() ?? booking.user?.id,
     userName: booking.user?.name ?? '',
     userEmail: booking.user?.email ?? '',
+    userRole: booking.user?.role ?? '',
     parking: booking.parking?._id?.toString?.() ?? booking.parking?.toString?.() ?? booking.parking?.id,
     parkingTitle: booking.parking?.title ?? '',
+    parkingCity: booking.parking?.city ?? '',
+    parkingState: booking.parking?.state ?? '',
     vehicleType: booking.vehicleType,
     bookingDate: booking.bookingDate,
     startTime: booking.startTime,

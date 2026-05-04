@@ -2,11 +2,18 @@ import mongoose from 'mongoose';
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
+import { generateUniqueCode, CODE_PREFIXES } from '../utils/codeGenerator.js';
+import {
+  validateBookingInput,
+  validateSlotAvailability,
+  formatValidationErrors,
+  buildOverlapQuery
+} from '../utils/bookingValidation.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
 
 /**
- * Returns true only when the booking start datetime is strictly in the future.
+ * Returns true only when the booking start datetime is at least 30 minutes in the future.
  *
  * Both arguments are compared against the current server time with no manual
  * timezone offset — Date parsing of "YYYY-MM-DDTHH:mm:00" uses the local
@@ -18,6 +25,8 @@ const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
  */
 export function isFutureBooking(bookingDate, startTime) {
   const now = new Date();
+  // Add 30 minute buffer (production requirement)
+  now.setMinutes(now.getMinutes() + 30);
   const bookingDateTime = new Date(`${bookingDate}T${startTime}:00`);
   return bookingDateTime > now;
 }
@@ -205,6 +214,7 @@ export async function computeLiveAvailableSlotsForMany(parkings, deps = {}) {
 export function serializeBooking(booking) {
   return {
     id: booking._id.toString(),
+    bookingCode: booking.bookingCode,
     user: booking.user?._id?.toString?.() ?? booking.user?.toString?.(),
     parking: booking.parking?._id?.toString?.() ?? booking.parking?.toString?.(),
     vehicleType: booking.vehicleType,
@@ -223,14 +233,18 @@ export function serializeBooking(booking) {
   };
 }
 
+/**
+ * Build optimized query filter for finding overlapping bookings
+ * Uses indexed fields for performance
+ * Only considers active bookings (pending, confirmed)
+ * 
+ * Overlap logic: (startTime < existingEndTime) AND (endTime > existingStartTime)
+ * 
+ * @param {object} input - Booking input with parking, bookingDate, startTime, endTime
+ * @returns {object} - MongoDB query filter
+ */
 export function buildBookingOverlapFilter(input) {
-  return {
-    parking: input.parking,
-    bookingDate: input.bookingDate,
-    status: { $in: ACTIVE_BOOKING_STATUSES },
-    startTime: { $lt: input.endTime },
-    endTime: { $gt: input.startTime }
-  };
+  return buildOverlapQuery(input, ACTIVE_BOOKING_STATUSES);
 }
 
 export function calculateTotalAmount(parking, input) {
@@ -243,31 +257,52 @@ export function calculateTotalAmount(parking, input) {
 }
 
 export async function createBooking(input, user, deps = {}) {
+  // 1. Check user status
   if (user.status === 'suspended') {
     throw createHttpError(403, 'Your account has been suspended. You cannot create new bookings.');
   }
 
+  // 2. Comprehensive input validation
+  const inputValidation = validateBookingInput(input);
+  if (!inputValidation.valid) {
+    throw createHttpError(400, formatValidationErrors(inputValidation.errors));
+  }
+
+  // 3. Additional time validation (30-minute minimum)
   if (!isFutureBooking(input.bookingDate, input.startTime)) {
-    throw createHttpError(400, 'Cannot book a past time slot');
+    throw createHttpError(400, 'Selected time is invalid (minimum 30 minutes required)');
   }
 
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
   const runInTransaction = deps.runInTransaction ?? withTransaction;
 
+  // 4. Use transaction to prevent race conditions
   return runInTransaction(async (session) => {
+    // 5. Find and validate parking
     const parking = await findBookableParking(ParkingModel, input.parking, session);
 
+    // 6. Validate vehicle type
     if (!parking.vehicleTypes.includes(input.vehicleType)) {
       throw createHttpError(409, 'Vehicle type is not supported by this parking listing');
     }
 
+    // 7. Check for overlapping bookings (CRITICAL: prevents double booking)
     const overlappingSlots = await countOverlappingSlots(BookingModel, input, session);
 
-    if (overlappingSlots + input.slotCount > parking.totalSlots) {
-      throw createHttpError(409, 'Requested time slot is no longer available');
+    // 8. Validate slot availability
+    const slotValidation = validateSlotAvailability(
+      input.slotCount,
+      parking.totalSlots,
+      overlappingSlots
+    );
+
+    if (!slotValidation.valid) {
+      throw createHttpError(409, slotValidation.error);
     }
 
+    // 9. Atomic slot reservation (prevents race condition)
+    // This query will fail if another transaction already reserved the slots
     const updatedParking = await ParkingModel.findOneAndUpdate(
       {
         _id: parking._id,
@@ -283,9 +318,20 @@ export async function createBooking(input, user, deps = {}) {
       throw createHttpError(409, 'Not enough parking slots available');
     }
 
+    // 10. Generate unique booking code
+    const bookingCode = await generateUniqueCode(
+      CODE_PREFIXES.BOOKING,
+      async (code) => {
+        const existing = await BookingModel.findOne({ bookingCode: code }).session(session);
+        return !existing;
+      }
+    );
+
+    // 11. Create booking
     const [booking] = await BookingModel.create(
       [
         {
+          bookingCode,
           user: user._id,
           parking: parking._id,
           vehicleType: input.vehicleType,
@@ -423,6 +469,20 @@ async function findBookingById(BookingModel, id, session) {
   return booking;
 }
 
+/**
+ * Count overlapping slots for a given booking time window
+ * Uses aggregation for performance with session support for transactions
+ * 
+ * This is critical for preventing double bookings:
+ * - Finds all active bookings that overlap with the requested time
+ * - Sums up their slot counts
+ * - Returns total occupied slots during that time window
+ * 
+ * @param {Model} BookingModel - Booking model
+ * @param {object} input - Booking input
+ * @param {ClientSession} session - MongoDB session for transaction
+ * @returns {Promise<number>} - Total overlapping slots
+ */
 async function countOverlappingSlots(BookingModel, input, session) {
   const pipeline = [
     { $match: buildBookingOverlapFilter(input) },

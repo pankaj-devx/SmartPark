@@ -29,12 +29,21 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
     filter.status = query.status;
   }
 
+  let bookingsQuery = BookingModel.find(filter);
+
+  // Populate user and parking details for owner dashboard
+  if (typeof bookingsQuery.populate === 'function') {
+    bookingsQuery = bookingsQuery
+      .populate('user', 'name email phone role')
+      .populate('parking', 'title city state address');
+  }
+
   const [bookings, parkings] = await Promise.all([
-    BookingModel.find(filter).sort({ bookingDate: 1, startTime: 1, _id: 1 }).lean(),
+    bookingsQuery.sort({ bookingDate: 1, startTime: 1, _id: 1 }).lean(),
     getOwnerParkings(user, deps)
   ]);
 
-  const serializedBookings = bookings.map(serializeBooking);
+  const serializedBookings = bookings.map(serializeOwnerBooking);
 
   // Inject live available slot counts into owner parkings
   const liveSlots = await computeLiveAvailableSlotsForMany(
@@ -90,6 +99,48 @@ export async function completeOwnerBooking(id, user, deps = {}) {
   }
 
   return serializeBooking(booking);
+}
+
+/**
+ * Verify a booking by bookingCode with role-based access control
+ * - OWNER: Can only verify bookings for their own parking
+ * - ADMIN: Can verify any booking
+ */
+export async function verifyBookingByCode(bookingCode, user, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+
+  if (!bookingCode || typeof bookingCode !== 'string') {
+    throw createHttpError(400, 'Booking code is required');
+  }
+
+  // Find booking by code and populate user and parking details
+  let bookingQuery = BookingModel.findOne({ bookingCode: bookingCode.toUpperCase().trim() });
+
+  if (typeof bookingQuery.populate === 'function') {
+    bookingQuery = bookingQuery
+      .populate('user', 'name email phone role')
+      .populate('parking', 'title city state address owner');
+  }
+
+  const booking = await bookingQuery.lean();
+
+  if (!booking) {
+    throw createHttpError(404, 'Invalid booking code');
+  }
+
+  // Role-based access control
+  if (user.role === 'owner') {
+    // Owner can only verify bookings for their own parking
+    const ownerId = booking.parking?.owner?.toString?.() ?? booking.parking?.owner;
+    const userId = user._id.toString();
+
+    if (ownerId !== userId) {
+      throw createHttpError(403, 'You can only verify bookings for your own parking');
+    }
+  }
+  // Admin can verify any booking (no additional check needed)
+
+  return serializeOwnerBooking(booking);
 }
 
 async function getOwnerParkingIds(user, requestedParkingId, deps = {}) {
@@ -176,5 +227,32 @@ function buildOwnerSummary(bookings, parkings) {
         estimatedRevenue: listingBookings.reduce((sum, booking) => sum + booking.totalAmount, 0)
       };
     })
+  };
+}
+
+function serializeOwnerBooking(booking) {
+  return {
+    id: booking._id?.toString?.() ?? booking.id,
+    bookingCode: booking.bookingCode,
+    user: booking.user?._id?.toString?.() ?? booking.user?.toString?.() ?? booking.user?.id,
+    userName: booking.user?.name ?? '',
+    userEmail: booking.user?.email ?? '',
+    userPhone: booking.user?.phone ?? '',
+    userRole: booking.user?.role ?? '',
+    parking: booking.parking?._id?.toString?.() ?? booking.parking?.toString?.() ?? booking.parking?.id,
+    parkingTitle: booking.parking?.title ?? '',
+    parkingCity: booking.parking?.city ?? '',
+    parkingState: booking.parking?.state ?? '',
+    parkingAddress: booking.parking?.address ?? '',
+    vehicleType: booking.vehicleType,
+    bookingDate: booking.bookingDate,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    slotCount: booking.slotCount,
+    totalAmount: booking.totalAmount,
+    status: booking.status,
+    paymentStatus: booking.paymentStatus ?? 'pending',
+    createdAt: booking.createdAt,
+    updatedAt: booking.updatedAt
   };
 }

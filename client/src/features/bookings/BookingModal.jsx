@@ -27,6 +27,17 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
   // Today's date string "YYYY-MM-DD" — used as the min value for the date picker
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  // Helper to get minimum allowed time (30 minutes from now for today)
+  function getMinTime(selectedDate) {
+    const now = new Date();
+    const isToday = new Date(selectedDate).toDateString() === now.toDateString();
+    
+    if (!isToday) return '00:00';
+    
+    now.setMinutes(now.getMinutes() + 30);
+    return now.toTimeString().slice(0, 5);
+  }
+
   const durationHours = getBookingDurationHours(form.startTime, form.endTime);
 
   // Inline time error: same time = zero duration
@@ -67,6 +78,16 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    // Additional client-side time validation
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 30);
+    const bookingDateTime = new Date(`${form.bookingDate}T${form.startTime}:00`);
+    
+    if (bookingDateTime <= now) {
+      setError('Please select a valid future time (minimum 30 minutes from now)');
       return;
     }
 
@@ -149,7 +170,7 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
                 onChange={updateField}
                 required
                 type="time"
-                min={form.bookingDate === todayStr ? new Date().toTimeString().slice(0, 5) : undefined}
+                min={getMinTime(form.bookingDate)}
                 value={form.startTime}
               />
               <Field label="End time" name="endTime" onChange={updateField} required type="time" value={form.endTime} />

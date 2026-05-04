@@ -1,4 +1,32 @@
 import { z } from 'zod';
+import { validateEmailFormat } from '../utils/emailValidation.js';
+import { validatePhoneNumber } from '../utils/phoneValidation.js';
+
+// Custom email validator using our comprehensive validation
+const emailValidator = z.string().trim().toLowerCase().refine(
+  (email) => {
+    const result = validateEmailFormat(email);
+    return result.valid;
+  },
+  {
+    message: 'Please enter a valid email address'
+  }
+);
+
+// Custom phone validator for Indian mobile numbers
+const phoneValidator = z.string().trim().refine(
+  (phone) => {
+    const result = validatePhoneNumber(phone);
+    return result.valid;
+  },
+  {
+    message: 'Enter a valid Indian mobile number'
+  }
+).transform((phone) => {
+  // Normalize phone number before saving
+  const result = validatePhoneNumber(phone);
+  return result.normalized || '';
+});
 
 const passwordSchema = z
   .string()
@@ -11,21 +39,21 @@ const trimmedString = (max) => z.string().trim().max(max);
 
 export const registerSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
-  email: z.email().toLowerCase(),
+  email: emailValidator,
   password: passwordSchema,
   role: z.enum(['driver', 'owner']).default('driver'),
-  phone: z.string().trim().max(20).optional()
+  phone: phoneValidator.optional()
 });
 
 export const loginSchema = z.object({
-  email: z.email().toLowerCase(),
+  email: emailValidator,
   password: z.string().min(1, 'Password is required')
 });
 
 export const updateProfileSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
-  email: z.email().toLowerCase(),
-  phone: z.string().trim().max(20).optional().default(''),
+  email: emailValidator,
+  phone: phoneValidator.optional().default(''),
   profilePhotoUrl: z.string().trim().max(200000).optional().default(''),
   preferences: z.object({
     emailNotifications: z.boolean().default(true),
@@ -59,8 +87,8 @@ export const updateProfileSchema = z.object({
     businessName: trimmedString(80).default(''),
     businessType: trimmedString(60).default(''),
     taxId: trimmedString(40).default(''),
-    supportEmail: z.union([z.literal(''), z.email().toLowerCase()]).default(''),
-    supportPhone: trimmedString(20).default('')
+    supportEmail: z.union([z.literal(''), emailValidator]).default(''),
+    supportPhone: phoneValidator.optional().default('')
   }).optional(),
   adminProfile: z.object({
     notificationChannel: z.enum(['email', 'slack', 'sms']).default('email'),

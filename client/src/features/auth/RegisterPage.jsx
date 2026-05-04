@@ -4,7 +4,7 @@ import { apiClient } from '../../lib/apiClient.js';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
 import { getDefaultRouteForRole } from '../../app/navigation.js';
 import { AuthForm } from './AuthForm.jsx';
-import { validateEmail, validatePhone } from './authValidation.js';
+import { validateEmail, validatePhone, normalizePhoneNumber } from './authValidation.js';
 import { FormField } from './FormField.jsx';
 import { GoogleAuthButton } from './GoogleAuthButton.jsx';
 import { useAuth } from './useAuth.js';
@@ -22,14 +22,34 @@ export function RegisterPage() {
     role: requestedRole,
     phone: ''
   });
+  const [fieldErrors, setFieldErrors] = useState({ email: '', phone: '' });
 
   if (isAuthenticated) {
     return <Navigate replace to={getDefaultRouteForRole(user?.role)} />;
   }
 
   function updateField(event) {
+    const { name, value } = event.target;
     setError('');
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    
+    let processedValue = value;
+    
+    // Normalize phone number on input
+    if (name === 'phone' && value) {
+      // Allow user to type freely, but validate on blur
+      processedValue = value;
+    }
+    
+    setForm((current) => ({ ...current, [name]: processedValue }));
+    
+    // Real-time validation
+    if (name === 'email') {
+      const emailError = validateEmail(value);
+      setFieldErrors((current) => ({ ...current, email: emailError }));
+    } else if (name === 'phone') {
+      const phoneError = validatePhone(value);
+      setFieldErrors((current) => ({ ...current, phone: phoneError }));
+    }
   }
 
   async function handleSubmit(event) {
@@ -37,13 +57,27 @@ export function RegisterPage() {
     setError('');
 
     const emailError = validateEmail(form.email);
-    if (emailError) { setError(emailError); return; }
+    if (emailError) { 
+      setFieldErrors((current) => ({ ...current, email: emailError }));
+      setError(emailError); 
+      return; 
+    }
 
     const phoneError = validatePhone(form.phone);
-    if (phoneError) { setError(phoneError); return; }
+    if (phoneError) { 
+      setFieldErrors((current) => ({ ...current, phone: phoneError }));
+      setError(phoneError); 
+      return; 
+    }
 
     try {
-      const response = await apiClient.post('/auth/register', form);
+      // Normalize phone before sending to API
+      const normalizedPhone = normalizePhoneNumber(form.phone);
+      
+      const response = await apiClient.post('/auth/register', {
+        ...form,
+        phone: normalizedPhone || ''
+      });
       login(response.data.data);
       navigate(getDefaultRouteForRole(response.data.data.user?.role));
     } catch (apiError) {
@@ -71,7 +105,16 @@ export function RegisterPage() {
       title={requestedRole === 'owner' ? 'List your parking space on SmartPark' : 'Create your SmartPark account'}
     >
       <FormField autoComplete="name" label="Full name" name="name" onChange={updateField} required value={form.name} />
-      <FormField autoComplete="email" label="Email" name="email" onChange={updateField} required type="email" value={form.email} />
+      <FormField 
+        autoComplete="email" 
+        label="Email" 
+        name="email" 
+        onChange={updateField} 
+        required 
+        type="email" 
+        value={form.email}
+        error={fieldErrors.email}
+      />
       <FormField
         autoComplete="new-password"
         label="Password"
@@ -94,7 +137,16 @@ export function RegisterPage() {
           <option value="owner">Parking owner</option>
         </select>
       </label>
-      <FormField autoComplete="tel" label="Phone (optional)" name="phone" onChange={updateField} type="tel" value={form.phone} />
+      <FormField 
+        autoComplete="tel" 
+        label="Phone (optional)" 
+        name="phone" 
+        onChange={updateField} 
+        type="tel" 
+        value={form.phone}
+        error={fieldErrors.phone}
+        placeholder="+91 98765 43210"
+      />
 
       <div className="relative flex items-center gap-3 py-1">
         <div className="h-px flex-1 bg-slate-200" />

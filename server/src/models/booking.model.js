@@ -2,6 +2,14 @@ import mongoose from 'mongoose';
 
 const bookingSchema = new mongoose.Schema(
   {
+    bookingCode: {
+      type: String,
+      unique: true,
+      required: true,
+      index: true,
+      trim: true,
+      uppercase: true
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

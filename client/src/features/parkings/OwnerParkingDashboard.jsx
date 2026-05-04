@@ -466,10 +466,27 @@ function OwnerBookingCard({ booking, onComplete, parking }) {
   return (
     <article className="rounded-lg border border-slate-200 p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
+        <div className="flex-1">
+          {booking.bookingCode ? (
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-1.5 border border-blue-200">
+              <span className="text-xs font-medium text-blue-600">Booking Code:</span>
+              <span className="text-sm font-bold text-blue-900">{booking.bookingCode}</span>
+            </div>
+          ) : null}
           <h3 className="font-semibold text-slate-950">{parking?.title ?? 'Parking listing'}</h3>
-          <p className="mt-1 text-sm text-slate-600">{booking.bookingDate} - {booking.startTime}-{booking.endTime}</p>
-          <p className="mt-2 text-sm text-slate-600">{booking.slotCount} slots - {booking.vehicleType} - Rs {booking.totalAmount}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            <span className="font-medium">Date:</span> {booking.bookingDate} | <span className="font-medium">Time:</span> {booking.startTime}-{booking.endTime}
+          </p>
+          {booking.userName || booking.userEmail ? (
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="font-medium">User:</span> {booking.userName || 'N/A'}
+              {booking.userEmail ? ` (${booking.userEmail})` : ''}
+              {booking.userPhone ? ` - ${booking.userPhone}` : ''}
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm text-slate-600">
+            <span className="font-medium">Details:</span> {booking.slotCount} slots · {booking.vehicleType} · Rs {booking.totalAmount}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${bookingStatusClass(booking.status)}`}>{booking.status}</span>

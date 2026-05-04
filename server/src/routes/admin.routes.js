@@ -10,7 +10,8 @@ import {
   getUsers,
   rejectParking,
   toggleParkingActive,
-  unblockUser
+  unblockUser,
+  verifyBooking
 } from '../controllers/admin.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorizeRoles } from '../middleware/authorizeRoles.js';
@@ -23,6 +24,7 @@ import {
   adminRejectParkingSchema,
   adminUserIdParamSchema
 } from '../validators/admin.validator.js';
+import { verifyBookingSchema } from '../validators/owner.validator.js';
 
 export const adminRoutes = Router();
 
@@ -45,3 +47,4 @@ adminRoutes.delete('/parkings/:id', validateRequest(adminParkingIdParamSchema, '
 // Bookings
 adminRoutes.get('/bookings', validateRequest(adminBookingQuerySchema, 'query'), getBookings);
 adminRoutes.patch('/bookings/:id/cancel', validateRequest(adminBookingIdParamSchema, 'params'), cancelBooking);
+adminRoutes.post('/bookings/verify', validateRequest(verifyBookingSchema), verifyBooking);

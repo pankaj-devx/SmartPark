@@ -14,14 +14,22 @@ export function LoginPage() {
   const { isAuthenticated, login, user } = useAuth();
   const [error, setError] = useState('');
   const [form, setForm] = useState({ email: '', password: '' });
+  const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' });
 
   if (isAuthenticated) {
     return <Navigate replace to={getDefaultRouteForRole(user?.role)} />;
   }
 
   function updateField(event) {
+    const { name, value } = event.target;
     setError('');
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    setForm((current) => ({ ...current, [name]: value }));
+    
+    // Real-time email validation
+    if (name === 'email') {
+      const emailError = validateEmail(value);
+      setFieldErrors((current) => ({ ...current, email: emailError }));
+    }
   }
 
   async function handleSubmit(event) {
@@ -29,7 +37,11 @@ export function LoginPage() {
     setError('');
 
     const emailError = validateEmail(form.email);
-    if (emailError) { setError(emailError); return; }
+    if (emailError) { 
+      setFieldErrors((current) => ({ ...current, email: emailError }));
+      setError(emailError); 
+      return; 
+    }
 
     try {
       const response = await apiClient.post('/auth/login', form);
@@ -59,7 +71,16 @@ export function LoginPage() {
       submitLabel="Sign in"
       title="Sign in"
     >
-      <FormField autoComplete="email" label="Email" name="email" onChange={updateField} required type="email" value={form.email} />
+      <FormField 
+        autoComplete="email" 
+        label="Email" 
+        name="email" 
+        onChange={updateField} 
+        required 
+        type="email" 
+        value={form.email}
+        error={fieldErrors.email}
+      />
       <FormField
         autoComplete="current-password"
         label="Password"

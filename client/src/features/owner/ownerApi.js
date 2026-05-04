@@ -9,3 +9,8 @@ export async function completeOwnerBooking(id) {
   const response = await apiClient.patch(`/owner/bookings/${id}/complete`);
   return response.data.data.booking;
 }
+
+export async function verifyOwnerBooking(bookingCode) {
+  const response = await apiClient.post('/owner/bookings/verify', { bookingCode });
+  return response.data.data.booking;
+}

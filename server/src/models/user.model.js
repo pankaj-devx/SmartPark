@@ -20,6 +20,14 @@ const savedAddressSchema = new mongoose.Schema(
 
 const userSchema = new mongoose.Schema(
   {
+    userCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      trim: true,
+      uppercase: true
+    },
     name: {
       type: String,
       required: true,

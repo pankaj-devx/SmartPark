@@ -5,10 +5,13 @@ import { createHttpError } from '../utils/createHttpError.js';
 import { authDebug } from '../utils/authDebug.js';
 import { signAuthToken } from '../utils/jwt.js';
 import { env } from '../config/env.js';
+import { generateUniqueCode, CODE_PREFIXES } from '../utils/codeGenerator.js';
+import { normalizePhoneNumber } from '../utils/phoneValidation.js';
 
 export function getSafeUser(user) {
   return {
     id: user._id.toString(),
+    userCode: user.userCode,
     name: user.name,
     email: user.email,
     role: user.role,
@@ -60,12 +63,27 @@ export async function registerUser(input) {
   }
 
   const passwordHash = await bcrypt.hash(input.password, 12);
+  
+  // Generate unique user code based on role
+  const codePrefix = input.role === 'owner' ? CODE_PREFIXES.OWNER : 
+                     input.role === 'admin' ? CODE_PREFIXES.ADMIN : 
+                     CODE_PREFIXES.USER;
+  
+  const userCode = await generateUniqueCode(
+    codePrefix,
+    async (code) => {
+      const existing = await User.findOne({ userCode: code });
+      return !existing;
+    }
+  );
+  
   const user = await User.create({
+    userCode,
     name: input.name,
     email: input.email,
     passwordHash,
     role: input.role,
-    phone: input.phone ?? ''
+    phone: normalizePhoneNumber(input.phone) ?? ''
   });
   const token = signAuthToken(user);
 
@@ -134,7 +152,7 @@ export async function updateCurrentUser(user, input, deps = {}) {
 
   user.name = input.name;
   user.email = nextEmail;
-  user.phone = input.phone ?? '';
+  user.phone = normalizePhoneNumber(input.phone) ?? '';
   user.profilePhotoUrl = input.profilePhotoUrl ?? '';
   user.preferences = {
     ...user.preferences,
@@ -237,7 +255,17 @@ export async function googleAuthUser(input, deps = {}) {
       await user.save();
     } else {
       // Create a new driver account — no password needed
+      // Generate unique user code
+      const userCode = await generateUniqueCode(
+        CODE_PREFIXES.USER,
+        async (code) => {
+          const existing = await UserModel.findOne({ userCode: code });
+          return !existing;
+        }
+      );
+      
       user = await UserModel.create({
+        userCode,
         name: name ?? email.split('@')[0],
         email: email.toLowerCase(),
         googleId,

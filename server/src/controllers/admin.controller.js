@@ -11,6 +11,7 @@ import {
   toggleAdminParkingActive,
   unblockAdminUser
 } from '../services/admin.service.js';
+import { verifyBookingByCode } from '../services/owner.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const getDashboard = asyncHandler(async (_req, res) => {
@@ -123,6 +124,17 @@ export const deleteParking = asyncHandler(async (req, res) => {
 
 export const cancelBooking = asyncHandler(async (req, res) => {
   const booking = await cancelAdminBooking(req.params.id);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      booking
+    }
+  });
+});
+
+export const verifyBooking = asyncHandler(async (req, res) => {
+  const booking = await verifyBookingByCode(req.body.bookingCode, req.user);
 
   res.status(200).json({
     success: true,
