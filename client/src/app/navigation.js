@@ -37,6 +37,7 @@ export const adminNavItems = [
   { label: 'Overview', to: '/admin/overview', icon: LayoutDashboard },
   { label: 'Analytics', to: '/admin/analytics', icon: TrendingUp },
   { label: 'Approvals', to: '/admin/approvals', icon: ShieldCheck },
+  { label: 'Parkings', to: '/admin/parkings', icon: MapPinned },
   { label: 'Bookings', to: '/admin/bookings', icon: ClipboardList },
   { label: 'Users', to: '/admin/users', icon: Users },
   { label: 'Reviews', to: '/admin/reviews', icon: Bell },

@@ -10,6 +10,11 @@ export async function approveAdminParking(id) {
   return response.data.data.parking;
 }
 
+export async function fetchAdminParkings() {
+  const response = await apiClient.get('/admin/parkings');
+  return response.data.data.parkings;
+}
+
 export async function rejectAdminParking(id, reason) {
   const response = await apiClient.patch(`/admin/parkings/${id}/reject`, { reason });
   return response.data.data.parking;

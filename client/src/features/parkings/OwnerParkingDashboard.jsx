@@ -14,7 +14,7 @@ const statusStyles = {
   rejected: 'bg-red-50 text-red-700'
 };
 
-const cachedData = readOwnerCache();
+const cachedData = null;
 
 export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
   const [searchParams] = useSearchParams();
@@ -63,7 +63,9 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
   useEffect(() => {
     if (!editIdFromUrl || parkings.length === 0) return;
     const target = parkings.find((p) => p.id === editIdFromUrl);
-    if (target) setEditingParking(target);
+    if (target) {
+      Promise.resolve().then(() => setEditingParking(target));
+    }
   }, [editIdFromUrl, parkings]);
 
   async function handleCreate(payload, imageFiles = []) {
@@ -299,7 +301,9 @@ function OwnerListings({ editingParking, handleCreate, handleDelete, handleMedia
                     {parking.verificationStatus === 'pending' ? 'pending review' : parking.verificationStatus}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-slate-600">{parking.availableSlots}/{parking.totalSlots} slots available</p>
+                <p className="mt-3 text-sm text-slate-600">
+                  Total {parking.totalSlots} | Available {parking.availableSlots} | Occupied {parking.occupiedSlots ?? Math.max(0, parking.totalSlots - parking.availableSlots)}
+                </p>
                 {parking.rejectionReason ? <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">Rejection reason: {parking.rejectionReason}</p> : null}
                 <div className="mt-4 flex gap-2">
                   <button className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => setEditingParking(parking)} type="button">
@@ -389,7 +393,9 @@ function OwnerOccupancy({ isLoading, occupancyCards, ownerSummary }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-slate-950">{parking.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{parking.availableSlots}/{parking.totalSlots} slots available</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Total {parking.totalSlots} | Available {parking.availableSlots} | Occupied {parking.occupiedSlots ?? Math.max(0, parking.totalSlots - parking.availableSlots)}
+                    </p>
                   </div>
                   <span className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700">{parking.utilization}% utilized</span>
                 </div>
@@ -543,19 +549,6 @@ function bookingStatusClass(status) {
 
 function toBookingParams(filters) {
   return Object.fromEntries(Object.entries(filters).filter(([key, value]) => key !== 'query' && value));
-}
-
-function readOwnerCache() {
-  if (typeof sessionStorage === 'undefined') {
-    return null;
-  }
-
-  try {
-    const raw = sessionStorage.getItem(OWNER_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
 }
 
 function writeOwnerCache(value) {

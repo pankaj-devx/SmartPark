@@ -5,6 +5,7 @@ import { createHttpError } from '../utils/createHttpError.js';
 import { serializeBooking } from './booking.service.js';
 import { computeLiveAvailableSlotsForMany } from './booking.service.js';
 import { serializeParking } from './parking.service.js';
+import { increaseAvailableSlots } from './slot.service.js';
 
 const EARNING_STATUSES = ['confirmed', 'completed'];
 const ACTIVE_STATUSES = ['pending', 'confirmed'];
@@ -66,39 +67,42 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
 export async function completeOwnerBooking(id, user, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
-  const booking = await findBookingForOwner(BookingModel, ParkingModel, id, user);
+  const runInTransaction = deps.runInTransaction
+    ?? (deps.BookingModel || deps.ParkingModel ? (work) => work(null) : withOwnerTransaction);
 
-  if (booking.status === 'cancelled') {
-    throw createHttpError(409, 'Cancelled bookings cannot be completed');
-  }
+  return runInTransaction(async (session) => {
+    const booking = await findBookingForOwner(BookingModel, ParkingModel, id, user, session);
 
-  if (booking.status === 'completed') {
+    if (booking.status === 'cancelled') {
+      throw createHttpError(409, 'Cancelled bookings cannot be completed');
+    }
+
+    if (booking.status === 'completed') {
+      return serializeBooking(booking);
+    }
+
+    await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
+    booking.status = 'completed';
+    await booking.save({ session });
+
+    console.log('Booking Completed');
     return serializeBooking(booking);
+  });
+}
+
+async function withOwnerTransaction(work) {
+  const session = await mongoose.startSession();
+
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+
+    return result;
+  } finally {
+    await session.endSession();
   }
-
-  // Check whether this booking's time window has already passed.
-  // If it has, reconcileExpiredBookings will have already (or will soon)
-  // restore the slots — so we must NOT increment again here.
-  const now = new Date();
-  const endDateTime = new Date(`${booking.bookingDate}T${booking.endTime}:00`);
-  const alreadyExpired = now > endDateTime;
-
-  booking.status = 'completed';
-  await booking.save();
-
-  // Only restore slots if the booking hasn't expired yet (i.e. the owner is
-  // completing it early). For expired bookings, reconcileExpiredBookings
-  // handles the slot restoration to prevent double-counting.
-  if (!alreadyExpired) {
-    await ParkingModel.findByIdAndUpdate(booking.parking, { $inc: { availableSlots: booking.slotCount } });
-    // Clamp to totalSlots
-    await ParkingModel.updateOne(
-      { _id: booking.parking },
-      [{ $set: { availableSlots: { $min: ['$availableSlots', '$totalSlots'] } } }]
-    );
-  }
-
-  return serializeBooking(booking);
 }
 
 /**
@@ -163,18 +167,20 @@ async function getOwnerParkings(user, deps = {}) {
   return ParkingModel.find({ owner: user._id }).sort({ createdAt: -1, _id: 1 }).lean();
 }
 
-async function findBookingForOwner(BookingModel, ParkingModel, id, user) {
+async function findBookingForOwner(BookingModel, ParkingModel, id, user, session) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw createHttpError(404, 'Booking not found');
   }
 
-  const booking = await BookingModel.findById(id);
+  const bookingQuery = BookingModel.findById(id);
+  const booking = session && typeof bookingQuery.session === 'function' ? await bookingQuery.session(session) : await bookingQuery;
 
   if (!booking) {
     throw createHttpError(404, 'Booking not found');
   }
 
-  const parking = await ParkingModel.findOne({ _id: booking.parking, owner: user._id });
+  const parkingQuery = ParkingModel.findOne({ _id: booking.parking, owner: user._id });
+  const parking = session && typeof parkingQuery.session === 'function' ? await parkingQuery.session(session) : await parkingQuery;
 
   if (!parking) {
     throw createHttpError(403, 'You can only manage bookings for your own parking listings');

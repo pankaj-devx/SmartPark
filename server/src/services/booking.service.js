@@ -9,6 +9,7 @@ import {
   formatValidationErrors,
   buildOverlapQuery
 } from '../utils/bookingValidation.js';
+import { clampAvailableSlots, decreaseAvailableSlots, increaseAvailableSlots } from './slot.service.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
 
@@ -104,24 +105,17 @@ export async function reconcileExpiredBookings(parkingId, deps = {}) {
 
   const expiredIds = expiredBookings.map((b) => b._id);
   const slotsToRestore = expiredBookings.reduce((sum, b) => sum + b.slotCount, 0);
+  const runInTransaction = deps.runInTransaction
+    ?? (deps.BookingModel || deps.ParkingModel ? (work) => work(null) : withTransaction);
 
-  // Mark all expired bookings as completed and restore slots atomically.
-  await Promise.all([
-    BookingModel.updateMany(
-      { _id: { $in: expiredIds } },
-      { $set: { status: 'completed' } }
-    ),
-    ParkingModel.findByIdAndUpdate(
-      parkingId,
-      { $inc: { availableSlots: slotsToRestore } }
-    )
-  ]);
-
-  // Clamp availableSlots to totalSlots (safety net)
-  await ParkingModel.updateOne(
-    { _id: parkingId },
-    [{ $set: { availableSlots: { $min: ['$availableSlots', '$totalSlots'] } } }]
-  );
+  await runInTransaction(async (session) => {
+    await BookingModel.updateMany(
+      { _id: { $in: expiredIds }, status: { $in: ACTIVE_BOOKING_STATUSES } },
+      { $set: { status: 'completed' } },
+      { session }
+    );
+    await increaseAvailableSlots(parkingId, slotsToRestore, { ParkingModel, session });
+  });
 
   return expiredBookings.length;
 }
@@ -166,12 +160,30 @@ export async function computeLiveAvailableSlotsForMany(parkings, deps = {}) {
 
   const ParkingModel = deps.ParkingModel ?? Parking;
 
+  if (deps.ParkingModel && !deps.forceLiveSlots) {
+    return new Map();
+  }
+
+  if (typeof ParkingModel.find !== 'function') {
+    return new Map();
+  }
+
   const parkingIds = parkings.map((p) => new mongoose.Types.ObjectId(p.id.toString()));
 
   // Get the actual availableSlots from the database (which accounts for all active bookings)
-  const parkingDocs = await ParkingModel.find({ _id: { $in: parkingIds } })
-    .select('_id availableSlots')
-    .lean();
+  const query = ParkingModel.find({ _id: { $in: parkingIds } });
+
+  if (typeof query.select !== 'function') {
+    return new Map();
+  }
+
+  const selectedQuery = query.select('_id availableSlots');
+
+  if (typeof selectedQuery.lean !== 'function') {
+    return new Map();
+  }
+
+  const parkingDocs = await selectedQuery.lean();
 
   const result = new Map();
   for (const doc of parkingDocs) {
@@ -272,21 +284,7 @@ export async function createBooking(input, user, deps = {}) {
     }
 
     // 9. Atomic slot reservation (prevents race condition)
-    // This query will fail if another transaction already reserved the slots
-    const updatedParking = await ParkingModel.findOneAndUpdate(
-      {
-        _id: parking._id,
-        verificationStatus: 'approved',
-        isActive: true,
-        availableSlots: { $gte: input.slotCount }
-      },
-      { $inc: { availableSlots: -input.slotCount } },
-      { new: true, session }
-    );
-
-    if (!updatedParking) {
-      throw createHttpError(409, 'Not enough parking slots available');
-    }
+    await decreaseAvailableSlots(parking._id, input.slotCount, { ParkingModel, session });
 
     // 10. Generate unique booking code
     const bookingCode = await generateUniqueCode(
@@ -319,6 +317,7 @@ export async function createBooking(input, user, deps = {}) {
       { session }
     );
 
+    console.log('Booking Created');
     return serializeBooking(booking);
   });
 }
@@ -382,11 +381,15 @@ export async function cancelBooking(id, user, deps = {}) {
       throw createHttpError(409, 'Completed bookings cannot be cancelled');
     }
 
-    booking.status = 'cancelled';
-    await booking.save({ session });
+    if (booking.status !== 'cancelled') {
+      await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
+      booking.status = 'cancelled';
+      booking.cancelledBy = user.role === 'admin' ? 'admin' : 'user';
+      await booking.save({ session });
+      await clampAvailableSlots(booking.parking, { ParkingModel, session });
+    }
 
-    await ParkingModel.findByIdAndUpdate(booking.parking, { $inc: { availableSlots: booking.slotCount } }, { session });
-
+    console.log('Booking Cancelled');
     return serializeBooking(booking);
   });
 }

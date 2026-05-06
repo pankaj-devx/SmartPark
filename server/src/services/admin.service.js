@@ -4,6 +4,7 @@ import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
 import { computeLiveAvailableSlotsForMany } from './booking.service.js';
 import { serializeParking, approveParking, rejectParking, toggleParkingActive } from './parking.service.js';
+import { getOccupiedSlots, increaseAvailableSlots } from './slot.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 export async function getAdminDashboard(deps = {}) {
@@ -18,7 +19,7 @@ export async function getAdminDashboard(deps = {}) {
       ParkingModel.countDocuments({ verificationStatus: 'rejected' }),
       BookingModel.countDocuments({}),
       UserModel.countDocuments({}),
-      ParkingModel.find({}).sort({ createdAt: -1, _id: 1 }).lean(),
+      buildAdminParkingQuery(ParkingModel.find({})),
       resolveAdminUsers(UserModel)
     ]);
   const serializedParkings = await serializeParkingsWithLiveSlots(parkings, deps);
@@ -45,10 +46,22 @@ export async function getAdminDashboard(deps = {}) {
 
 export async function listAdminParkings(deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
-  const parkings = await ParkingModel.find({}).sort({ createdAt: -1, _id: 1 }).lean();
+  const BookingModel = deps.BookingModel ?? Booking;
+  const parkings = await buildAdminParkingQuery(ParkingModel.find({}));
   const serializedParkings = await serializeParkingsWithLiveSlots(parkings, deps);
+  const bookingCounts = await getBookingCountsByParking(BookingModel, parkings);
 
-  return groupParkingsByStatus(serializedParkings);
+  const listings = serializedParkings.map((parking) => ({
+    ...parking,
+    occupiedSlots: getOccupiedSlots(parking),
+    bookingCount: bookingCounts.get(parking.id) ?? 0,
+    parkingStatus: getParkingStatus(parking)
+  }));
+
+  return {
+    ...groupParkingsByStatus(listings),
+    all: listings
+  };
 }
 
 export async function approveAdminParking(id, deps = {}) {
@@ -252,20 +265,22 @@ export async function cancelAdminBooking(id, deps = {}) {
       throw createHttpError(404, 'Booking not found');
     }
 
-    if (booking.status === 'cancelled' || booking.status === 'completed') {
+    if (booking.status === 'cancelled') {
+      return serializeAdminBooking(booking);
+    }
+
+    if (booking.status === 'completed') {
       throw createHttpError(400, `Cannot cancel a booking that is already ${booking.status}`);
     }
 
-    booking.status = 'cancelled';
-    booking.cancelledBy = 'admin';
-    await booking.save({ session });
+    if (booking.status !== 'cancelled') {
+      await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
+      booking.status = 'cancelled';
+      booking.cancelledBy = 'admin';
+      await booking.save({ session });
+    }
 
-    await ParkingModel.findByIdAndUpdate(
-      booking.parking,
-      { $inc: { availableSlots: booking.slotCount } },
-      { session }
-    );
-
+    console.log('Booking Cancelled');
     return serializeAdminBooking(booking);
   });
 }
@@ -287,4 +302,34 @@ async function withAdminTransaction(work) {
   } finally {
     await session.endSession();
   }
+}
+
+async function getBookingCountsByParking(BookingModel, parkings) {
+  if (!parkings.length || typeof BookingModel.aggregate !== 'function') {
+    return new Map();
+  }
+
+  const parkingIds = parkings.map((parking) => new mongoose.Types.ObjectId(parking._id.toString()));
+  const rows = await BookingModel.aggregate([
+    { $match: { parking: { $in: parkingIds } } },
+    { $group: { _id: '$parking', bookingCount: { $sum: 1 } } }
+  ]);
+
+  return new Map(rows.map((row) => [row._id.toString(), row.bookingCount]));
+}
+
+function getParkingStatus(parking) {
+  if (!parking.isActive) {
+    return 'inactive';
+  }
+
+  return parking.verificationStatus;
+}
+
+function buildAdminParkingQuery(query) {
+  const populatedQuery = typeof query.populate === 'function'
+    ? query.populate('owner', 'name email role')
+    : query;
+
+  return populatedQuery.sort({ createdAt: -1, _id: 1 }).lean();
 }

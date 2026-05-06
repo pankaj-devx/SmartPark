@@ -24,6 +24,7 @@ import {
   deleteAdminParking,
   fetchAdminBookings,
   fetchAdminDashboard,
+  fetchAdminParkings,
   rejectAdminParking,
   toggleAdminParkingActive,
   unblockAdminUser
@@ -40,7 +41,7 @@ const statusStyles = {
   completed: 'bg-slate-100 text-slate-700'
 };
 
-const cachedData = readAdminCache();
+const cachedData = null;
 
 export function AdminDashboardPage({ activeSection = 'overview' }) {
   const { user: currentUser } = useAuth();
@@ -52,6 +53,8 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [bookingSearch, setBookingSearch] = useState('');
+  const [parkingStatusFilter, setParkingStatusFilter] = useState('');
+  const [parkingListings, setParkingListings] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('');
   const [listingSearch, setListingSearch] = useState('');
@@ -100,6 +103,23 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
     };
   }, [dashboard, listingSearch]);
 
+  const filteredParkingListings = useMemo(() => {
+    const term = listingSearch.trim().toLowerCase();
+
+    return parkingListings.filter((parking) => {
+      const matchesStatus = parkingStatusFilter ? parking.parkingStatus === parkingStatusFilter : true;
+      const matchesTerm = term
+        ? [parking.title, parking.ownerName, parking.ownerEmail, parking.owner, parking.city, parking.state, parking.address, parking.area, parking.parkingStatus]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(term)
+        : true;
+
+      return matchesStatus && matchesTerm;
+    });
+  }, [listingSearch, parkingListings, parkingStatusFilter]);
+
   const bookingMetrics = useMemo(() => buildBookingMetrics(bookings), [bookings]);
 
   const loadDashboard = useCallback(async () => {
@@ -108,20 +128,23 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
 
     try {
       console.log('[AdminDashboard] Loading admin data...');
-      const [dashboardData, bookingRows] = await Promise.all([
+      const [dashboardData, bookingRows, parkingData] = await Promise.all([
         fetchAdminDashboard(),
-        fetchAdminBookings(bookingStatus ? { status: bookingStatus } : {})
+        fetchAdminBookings(bookingStatus ? { status: bookingStatus } : {}),
+        fetchAdminParkings()
       ]);
       setDashboard(dashboardData);
       setBookings(bookingRows);
+      setParkingListings(parkingData.all ?? Object.values(parkingData).flat());
       console.log('[AdminDashboard] Admin data loaded:', {
         bookings: bookingRows.length,
         users: dashboardData.users.length,
-        parkings: Object.values(dashboardData.parkings).flat().length
+        parkings: parkingData.all?.length ?? Object.values(parkingData).flat().length
       });
       writeAdminCache({
         dashboard: dashboardData,
-        bookings: bookingRows
+        bookings: bookingRows,
+        parkingListings: parkingData.all ?? Object.values(parkingData).flat()
       });
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to load admin dashboard'));
@@ -185,7 +208,9 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
       console.log('[AdminDashboard] Deleting parking:', parking.id);
       await deleteAdminParking(parking.id);
       setDashboard((current) => removeParking(current, parking.id));
+      setParkingListings((current) => current.filter((item) => item.id !== parking.id));
       console.log('[AdminDashboard] Parking deleted');
+      await loadDashboard();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError, 'Unable to delete parking listing'));
     }
@@ -235,6 +260,7 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
 
       {activeSection === 'overview' ? <AdminOverview bookingMetrics={bookingMetrics} dashboard={dashboard} /> : null}
       {activeSection === 'approvals' ? <AdminApprovals applyParkingUpdate={applyParkingUpdate} listingSearch={listingSearch} onDelete={handleDeleteParking} parkings={filteredParkings} rejectReason={rejectReason} rejectTarget={rejectTarget} setListingSearch={setListingSearch} setRejectReason={setRejectReason} setRejectTarget={setRejectTarget} /> : null}
+      {activeSection === 'parkings' ? <AdminParkingListings filteredParkings={filteredParkingListings} isLoading={isLoading} listingSearch={listingSearch} onRefresh={loadDashboard} parkingStatusFilter={parkingStatusFilter} setListingSearch={setListingSearch} setParkingStatusFilter={setParkingStatusFilter} /> : null}
       {activeSection === 'bookings' ? <AdminBookings bookingSearch={bookingSearch} bookingStatus={bookingStatus} filteredBookings={filteredBookings} onCancel={handleCancelBooking} setBookingSearch={setBookingSearch} setBookingStatus={setBookingStatus} /> : null}
       {activeSection === 'users' ? <AdminUsers currentAdminId={currentUser?.id} filteredUsers={filteredUsers} onBlock={handleBlockUser} onUnblock={handleUnblockUser} search={userSearch} setSearch={setUserSearch} setUserRoleFilter={setUserRoleFilter} userMetrics={dashboard?.userMetrics} userRoleFilter={userRoleFilter} /> : null}
       {activeSection === 'reports' ? <AdminReports bookingMetrics={bookingMetrics} dashboard={dashboard} /> : null}
@@ -338,6 +364,82 @@ function AdminApprovals({ applyParkingUpdate, listingSearch, onDelete, parkings,
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AdminParkingListings({ filteredParkings, isLoading, listingSearch, onRefresh, parkingStatusFilter, setListingSearch, setParkingStatusFilter }) {
+  return (
+    <Panel title="Parking listings" subtitle="Audit marketplace capacity with synchronized slot counts across every listing.">
+      <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto]">
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Search listings
+          <div className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2">
+            <Search className="h-4 w-4 text-slate-500" aria-hidden="true" />
+            <input className="min-w-0 flex-1 outline-none" onChange={(event) => setListingSearch(event.target.value)} value={listingSearch} />
+          </div>
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Status
+          <select className="rounded-md border border-slate-300 px-3 py-2" onChange={(event) => setParkingStatusFilter(event.target.value)} value={parkingStatusFilter}>
+            <option value="">All</option>
+            <option value="approved">Approved</option>
+            <option value="pending">Pending</option>
+            <option value="rejected">Rejected</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
+        <button
+          className="inline-flex items-center justify-center gap-2 self-end rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          disabled={isLoading}
+          onClick={onRefresh}
+          type="button"
+        >
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      {filteredParkings.length === 0 ? <EmptyState description="Parking listings that match the current filters will appear here." title="No parking listings match" /> : null}
+      {filteredParkings.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Parking</th>
+                <th className="px-4 py-3">Owner</th>
+                <th className="px-4 py-3">Total</th>
+                <th className="px-4 py-3">Available</th>
+                <th className="px-4 py-3">Occupied</th>
+                <th className="px-4 py-3">Bookings</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {filteredParkings.map((parking) => (
+                <tr key={parking.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-950">{parking.title}</p>
+                    <p className="mt-1 text-xs text-slate-500">{[parking.city, parking.state].filter(Boolean).join(', ')}</p>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <p>{parking.ownerName || parking.owner || 'Unassigned'}</p>
+                    {parking.ownerEmail ? <p className="mt-1 text-xs text-slate-500">{parking.ownerEmail}</p> : null}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-700">{parking.totalSlots}</td>
+                  <td className="px-4 py-3 font-semibold text-emerald-700">{parking.availableSlots}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700">{parking.occupiedSlots ?? Math.max(0, parking.totalSlots - parking.availableSlots)}</td>
+                  <td className="px-4 py-3 text-slate-700">{parking.bookingCount ?? 0}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${statusStyles[parking.verificationStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                      {parking.parkingStatus}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </Panel>
   );
 }
 
@@ -841,19 +943,6 @@ function replaceUser(current, updatedUser) {
         .filter((u) => u.status === 'suspended').length
     }
   };
-}
-
-function readAdminCache() {
-  if (typeof sessionStorage === 'undefined') {
-    return null;
-  }
-
-  try {
-    const raw = sessionStorage.getItem(ADMIN_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
 }
 
 function writeAdminCache(value) {

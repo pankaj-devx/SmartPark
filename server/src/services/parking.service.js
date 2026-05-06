@@ -3,6 +3,7 @@ import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js'
 import { Parking } from '../models/parking.model.js';
 import { Review } from '../models/review.model.js';
 import { computeLiveAvailableSlotsForMany, reconcileExpiredBookings } from './booking.service.js';
+import { getOccupiedSlots } from './slot.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 const MAX_PARKING_IMAGES = 5;
@@ -72,6 +73,7 @@ export function serializeParking(parking) {
     },
     totalSlots: parking.totalSlots,
     availableSlots: parking.availableSlots,
+    occupiedSlots: getOccupiedSlots(parking),
     vehicleTypes: parking.vehicleTypes,
     hourlyPrice: parking.hourlyPrice,
     // pricing is a Mongoose Map — convert to a plain object for JSON serialization.
@@ -91,6 +93,8 @@ export function serializeParking(parking) {
     labels: parking.labels ?? [],
     explanation: parking.explanation,
     owner: parking.owner?._id?.toString?.() ?? parking.owner?.toString?.(),
+    ownerName: parking.owner?.name ?? '',
+    ownerEmail: parking.owner?.email ?? '',
     verificationStatus: parking.verificationStatus,
     rejectionReason: parking.rejectionReason,
     isActive: parking.isActive,

@@ -5,6 +5,7 @@ import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createNotification } from './notification.service.js';
 import { serializeBooking, isFutureBooking } from './booking.service.js';
+import { increaseAvailableSlots } from './slot.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 export async function createOrder(amount) {
@@ -284,7 +285,8 @@ async function cancelPendingBooking(booking, ParkingModel, paymentStatus = 'fail
   await booking.save();
 
   if (shouldRestoreSlots) {
-    await ParkingModel.findByIdAndUpdate(booking.parking, { $inc: { availableSlots: booking.slotCount } });
+    await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel });
+    console.log('Booking Cancelled');
   }
 }
 

@@ -104,6 +104,7 @@ export const router = createBrowserRouter([
           { path: 'overview', element: <AdminDashboardPage activeSection="overview" /> },
           { path: 'analytics', element: <AdminDashboardPage activeSection="analytics" /> },
           { path: 'approvals', element: <AdminDashboardPage activeSection="approvals" /> },
+          { path: 'parkings', element: <AdminDashboardPage activeSection="parkings" /> },
           { path: 'bookings', element: <AdminDashboardPage activeSection="bookings" /> },
           { path: 'users', element: <AdminDashboardPage activeSection="users" /> },
           { path: 'reviews', element: <AdminReviewsPanel /> },
