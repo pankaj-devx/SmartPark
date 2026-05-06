@@ -108,7 +108,6 @@ Built with **real-time synchronization, geospatial intelligence, and scalable ar
 * Booking control
 * Parking moderation
 
-## Phase 10 — Chat System *(optional / skipped)*
 
 ## Phase 11 — Smart Dashboards
 
@@ -252,17 +251,7 @@ http://localhost:5173
 
 ---
 
-# 🚀 Upcoming Features
-
-* 💳 Payment integration (Stripe / Razorpay)
-* 🤖 AI-based parking recommendations
-* 📊 Advanced analytics dashboard
-* 🌐 Deployment (Vercel + Render)
-* 📱 Mobile optimization
-
----
-
-# 🎯 Project Highlights (Resume Ready)
+# 🎯 Project Highlights 
 
 * Full-stack MERN application
 * Real-time system using Socket.IO
