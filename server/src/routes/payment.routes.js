@@ -20,6 +20,11 @@ paymentRoutes.post(
   requireDatabase,
   authenticate,
   authorizeRoles('driver'),
+  (req, _res, next) => {
+    console.log('CREATE ORDER ROUTE HIT');
+    console.log('BODY:', req.body);
+    next();
+  },
   validateRequest(createPaymentOrderSchema),
   createPaymentOrderHandler
 );

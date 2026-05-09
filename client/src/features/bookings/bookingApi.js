@@ -1,10 +1,5 @@
 import { apiClient } from '../../lib/apiClient.js';
 
-export async function createBooking(payload) {
-  const response = await apiClient.post('/bookings', payload);
-  return response.data.data.booking;
-}
-
 export async function createPaymentOrder(payload) {
   const response = await apiClient.post('/payments/create-order', payload);
   return response.data.data;

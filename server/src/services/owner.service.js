@@ -7,7 +7,6 @@ import { computeLiveAvailableSlotsForMany } from './booking.service.js';
 import { serializeParking } from './parking.service.js';
 import { increaseAvailableSlots } from './slot.service.js';
 
-const EARNING_STATUSES = ['confirmed', 'completed'];
 const ACTIVE_STATUSES = ['pending', 'confirmed'];
 
 export async function getOwnerBookings(user, query = {}, deps = {}) {
@@ -214,7 +213,7 @@ function buildOwnerSummary(bookings, parkings) {
       ACTIVE_STATUSES.includes(booking.status) &&
       (booking.bookingDate > today || (booking.bookingDate === today && booking.endTime > currentTime))
   ).length;
-  const revenueBookings = bookings.filter((booking) => EARNING_STATUSES.includes(booking.status));
+  const revenueBookings = bookings.filter(isPaidRevenueBooking);
   const estimatedRevenue = revenueBookings.reduce((sum, booking) => sum + booking.totalAmount, 0);
 
   return {
@@ -262,8 +261,13 @@ function serializeOwnerBooking(booking) {
     slotCount: booking.slotCount,
     totalAmount: booking.totalAmount,
     status: booking.status,
+    bookingStatus: booking.bookingStatus ?? (booking.status === 'cancelled' ? 'cancelled' : 'confirmed'),
     paymentStatus: booking.paymentStatus ?? 'pending',
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt
   };
+}
+
+function isPaidRevenueBooking(booking) {
+  return booking.paymentStatus === 'paid' && booking.bookingStatus !== 'cancelled';
 }

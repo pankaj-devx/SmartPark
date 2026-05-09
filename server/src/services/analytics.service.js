@@ -61,7 +61,20 @@ export async function getOwnerAnalytics(ownerId) {
       {
         $group: {
           _id: null,
-          totalEarnings: { $sum: '$totalAmount' },
+          totalEarnings: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$paymentStatus', 'paid'] },
+                    { $ne: ['$bookingStatus', 'cancelled'] }
+                  ]
+                },
+                '$totalAmount',
+                0
+              ]
+            }
+          },
           totalBookings: { $sum: 1 }
         }
       }

@@ -22,6 +22,7 @@ export function ParkingDetailPage() {
   const [isBookingOpen, setIsBookingOpen] = useState(() => searchParams.get('intent') === 'reserve');
   const [isSaved, setIsSaved] = useState(false);
   const [bookingDraft, setBookingDraft] = useState(() => getGuestBookingIntent(id));
+  const [useSearchBookingDefaults, setUseSearchBookingDefaults] = useState(true);
   const [authModalConfig, setAuthModalConfig] = useState({ isOpen: false, pendingAction: null, title: '' });
   const [reviewData, setReviewData] = useState(null);
 
@@ -60,6 +61,7 @@ export function ParkingDetailPage() {
   async function handleBookingSuccess(booking) {
     console.log('[ParkingDetailPage] Booking successful, refreshing data...');
     clearGuestBookingIntent(id);
+    setBookingDraft(null);
     setIsBookingOpen(false);
 
     // Refetch the parking from the API so availableSlots reflects the server's
@@ -106,6 +108,12 @@ export function ParkingDetailPage() {
 
   function handleReserveClick() {
     setIsBookingOpen(true);
+  }
+
+  function handlePaymentAttemptCleared() {
+    clearGuestBookingIntent(id);
+    setBookingDraft(null);
+    setUseSearchBookingDefaults(false);
   }
 
   function handleAuthSuccess() {
@@ -228,7 +236,7 @@ export function ParkingDetailPage() {
 
               <button
                 className="mt-5 w-full rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={parking.availableSlots < 1}
+                disabled={parking.totalSlots < 1}
                 onClick={handleReserveClick}
                 type="button"
               >
@@ -268,14 +276,15 @@ export function ParkingDetailPage() {
       {parking && isBookingOpen ? (
         <BookingModal
           initialValues={{
-            date: bookingDraft?.bookingDate ?? searchParams.get('date') ?? '',
-            startTime: bookingDraft?.startTime ?? searchParams.get('startTime') ?? '',
-            endTime: bookingDraft?.endTime ?? searchParams.get('endTime') ?? '',
+            date: bookingDraft?.bookingDate ?? (useSearchBookingDefaults ? searchParams.get('date') : '') ?? '',
+            startTime: bookingDraft?.startTime ?? (useSearchBookingDefaults ? searchParams.get('startTime') : '') ?? '',
+            endTime: bookingDraft?.endTime ?? (useSearchBookingDefaults ? searchParams.get('endTime') : '') ?? '',
             vehicleType: bookingDraft?.vehicleType ?? '',
             slotCount: bookingDraft?.slotCount ?? 1
           }}
           isAuthenticated={isAuthenticated}
           onClose={() => setIsBookingOpen(false)}
+          onPaymentAttemptCleared={handlePaymentAttemptCleared}
           onRequireAuth={handleRequireAuth}
           onSuccess={handleBookingSuccess}
           parking={parking}

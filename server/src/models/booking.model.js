@@ -59,6 +59,12 @@ const bookingSchema = new mongoose.Schema(
       default: 'confirmed',
       index: true
     },
+    bookingStatus: {
+      type: String,
+      enum: ['confirmed', 'cancelled'],
+      default: 'confirmed',
+      index: true
+    },
     paymentStatus: {
       type: String,
       enum: ['pending', 'paid', 'failed'],
@@ -93,5 +99,7 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.index({ user: 1, createdAt: -1 });
 bookingSchema.index({ parking: 1, bookingDate: 1, status: 1, startTime: 1, endTime: 1 });
+bookingSchema.index({ parking: 1, bookingDate: 1, paymentStatus: 1, bookingStatus: 1, startTime: 1, endTime: 1 });
+bookingSchema.index({ razorpayOrderId: 1 }, { sparse: true });
 
 export const Booking = mongoose.model('Booking', bookingSchema);

@@ -4,11 +4,21 @@ import { env } from '../config/env.js';
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createNotification } from './notification.service.js';
-import { serializeBooking, isFutureBooking } from './booking.service.js';
-import { increaseAvailableSlots } from './slot.service.js';
+import {
+  buildBookingOverlapFilter,
+  calculateTotalAmount,
+  createConfirmedBooking,
+  isFutureBooking,
+  serializeBooking
+} from './booking.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
+import {
+  formatValidationErrors,
+  validatePaymentBookingInput,
+  validateSlotAvailability
+} from '../utils/bookingValidation.js';
 
-export async function createOrder(amount) {
+export async function createOrder(amount, options = {}) {
   const amountInPaise = Math.round(Number(amount) * 100);
 
   if (!Number.isFinite(amountInPaise) || amountInPaise <= 0) {
@@ -27,7 +37,8 @@ export async function createOrder(amount) {
   return razorpay.orders.create({
     amount: amountInPaise,
     currency: 'INR',
-    receipt: `smartpark_${Date.now()}`
+    receipt: options.receipt ?? `smartpark_${Date.now()}`,
+    notes: options.notes
   });
 }
 
@@ -91,34 +102,32 @@ export async function createPaymentOrder(input, user, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
   const createRazorpayOrder = deps.createOrder ?? createOrder;
-  const booking = await findPayableBooking(BookingModel, ParkingModel, input.bookingId, user);
-
-  if (booking.paymentStatus === 'paid') {
-    throw createHttpError(400, 'Booking already paid');
-  }
-
-  if (booking.status !== 'pending') {
-    throw createHttpError(409, 'Only pending bookings can be paid');
-  }
-
-  if (booking.razorpayOrderId) {
-    throw createHttpError(409, 'Payment order already created');
-  }
+  const bookingInput = normalizeBookingInput(input);
+  const parking = await validatePaymentBookingRequest(BookingModel, ParkingModel, bookingInput, user);
+  const totalAmount = calculateTotalAmount(parking, bookingInput);
 
   if (env.ALLOW_TEST_PAYMENT && input.coupon === env.TEST_COUPON_CODE) {
-    booking.isTestPayment = true;
-    await markBookingPaid(booking, deps);
+    const booking = await createConfirmedPaidBooking(bookingInput, user, {
+      ...deps,
+      BookingModel,
+      ParkingModel,
+      isTestPayment: true,
+      paymentStatus: 'paid',
+      status: 'confirmed',
+      bookingStatus: 'confirmed'
+    });
 
     return {
       success: true,
       testPayment: true,
-      booking: serializeBooking(booking)
+      booking
     };
   }
 
-  const order = await createRazorpayOrder(booking.totalAmount);
-  booking.razorpayOrderId = order.id;
-  await booking.save();
+  const order = await createRazorpayOrder(totalAmount, {
+    receipt: `smartpark_${Date.now()}`,
+    notes: buildOrderNotes(bookingInput, user, totalAmount)
+  });
 
   return {
     success: true,
@@ -127,7 +136,10 @@ export async function createPaymentOrder(input, user, deps = {}) {
     amount: order.amount,
     currency: order.currency,
     keyId: env.RAZORPAY_KEY_ID,
-    booking: serializeBooking(booking)
+    bookingDraft: {
+      ...bookingInput,
+      totalAmount
+    }
   };
 }
 
@@ -136,30 +148,29 @@ export async function verifyPayment(input, user, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const verify = deps.verifySignature ?? verifySignature;
   const getOrder = deps.fetchOrder ?? fetchOrder;
-  const booking = await findPayableBooking(BookingModel, ParkingModel, input.bookingId, user);
+  const existingBooking = await BookingModel.findOne?.({ razorpayOrderId: input.razorpay_order_id });
 
-  if (booking.paymentStatus === 'paid') {
+  if (existingBooking?.paymentStatus === 'paid') {
     return {
       success: true,
       message: 'Already verified',
-      booking: serializeBooking(booking)
+      booking: serializeBooking(existingBooking)
     };
-  }
-
-  // Reject payment if the booking start time has already passed.
-  if (!isFutureBooking(booking.bookingDate, booking.startTime)) {
-    await cancelPendingBooking(booking, ParkingModel, 'failed');
-    throw createHttpError(400, 'Booking time expired before payment');
   }
 
   logPaymentVerification(input);
 
-  if (booking.razorpayOrderId && booking.razorpayOrderId !== input.razorpay_order_id) {
-    throw createHttpError(400, 'Payment order mismatch');
+  const razorpayOrder = await getOrder(input.razorpay_order_id);
+  const bookingInput = extractBookingInputFromOrder(razorpayOrder, input);
+  const orderUserId = getOrderNote(razorpayOrder, 'userId');
+
+  if (user && orderUserId && orderUserId !== user._id.toString()) {
+    throw createHttpError(403, 'You do not have permission to verify this payment');
   }
 
-  const razorpayOrder = await getOrder(input.razorpay_order_id);
-  validatePaymentAmount(booking, razorpayOrder);
+  if (!isFutureBooking(bookingInput.bookingDate, bookingInput.startTime)) {
+    throw createHttpError(400, 'Booking time expired before payment');
+  }
 
   const isValid = verify(
     input.razorpay_order_id,
@@ -167,24 +178,34 @@ export async function verifyPayment(input, user, deps = {}) {
     input.razorpay_signature
   );
 
-  if (isValid) {
-    booking.razorpayOrderId = input.razorpay_order_id;
-    booking.razorpayPaymentId = input.razorpay_payment_id;
-    await markBookingPaid(booking, deps);
-
+  if (!isValid) {
     return {
-      success: true,
-      booking: serializeBooking(booking)
+      success: false,
+      message: 'Payment verification failed'
     };
   }
 
-  booking.razorpayOrderId = input.razorpay_order_id;
-  booking.razorpayPaymentId = input.razorpay_payment_id;
-  await cancelPendingBooking(booking, ParkingModel, 'failed');
+  const parking = await validatePaymentBookingRequest(BookingModel, ParkingModel, bookingInput, user);
+  validatePaymentAmount(calculateTotalAmount(parking, bookingInput), razorpayOrder);
+  const booking = await createConfirmedPaidBookingIdempotently(
+    bookingInput,
+    user,
+    input.razorpay_order_id,
+    {
+      ...deps,
+      BookingModel,
+      ParkingModel,
+      razorpayOrderId: input.razorpay_order_id,
+      razorpayPaymentId: input.razorpay_payment_id,
+      paymentStatus: 'paid',
+      status: 'confirmed',
+      bookingStatus: 'confirmed'
+    }
+  );
 
   return {
-    success: false,
-    booking: serializeBooking(booking)
+    success: true,
+    booking
   };
 }
 
@@ -211,13 +232,10 @@ export async function handlePaymentWebhook(payload, signature, deps = {}) {
 
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
+  const getOrder = deps.fetchOrder ?? fetchOrder;
   const booking = await BookingModel.findOne({ razorpayOrderId: payment.order_id });
 
-  if (!booking) {
-    return { success: true, ignored: true };
-  }
-
-  if (booking.paymentStatus === 'paid') {
+  if (booking?.paymentStatus === 'paid') {
     return {
       success: true,
       message: 'Already verified',
@@ -225,90 +243,161 @@ export async function handlePaymentWebhook(payload, signature, deps = {}) {
     };
   }
 
-  await expirePendingBookingIfNeeded(booking, ParkingModel);
+  const razorpayOrder = payment.notes?.parking
+    ? { notes: payment.notes, amount: payment.amount }
+    : await getOrder(payment.order_id);
+  const bookingInput = extractBookingInputFromOrder(razorpayOrder, { razorpay_order_id: payment.order_id });
+  const userId = getOrderNote(razorpayOrder, 'userId');
 
-  if (booking.status !== 'pending' || booking.paymentStatus !== 'pending') {
+  if (!userId) {
     return { success: true, ignored: true };
   }
 
-  validatePaymentAmount(booking, { amount: payment.amount });
-  booking.razorpayPaymentId = payment.id;
-  await markBookingPaid(booking, deps);
+  const webhookUser = { _id: { toString: () => userId }, role: 'driver' };
+  const parking = await validatePaymentBookingRequest(BookingModel, ParkingModel, bookingInput, webhookUser);
+  validatePaymentAmount(calculateTotalAmount(parking, bookingInput), { amount: payment.amount });
+  const confirmedBooking = await createConfirmedPaidBookingIdempotently(
+    bookingInput,
+    webhookUser,
+    payment.order_id,
+    {
+      ...deps,
+      BookingModel,
+      ParkingModel,
+      razorpayOrderId: payment.order_id,
+      razorpayPaymentId: payment.id,
+      paymentStatus: 'paid',
+      status: 'confirmed',
+      bookingStatus: 'confirmed'
+    }
+  );
 
   return {
     success: true,
-    booking: serializeBooking(booking)
+    booking: confirmedBooking
   };
 }
 
-async function findPayableBooking(BookingModel, ParkingModel, bookingId, user) {
-  if (!bookingId) {
-    throw createHttpError(400, 'Booking ID is required');
-  }
-
-  const booking = await BookingModel.findById(bookingId);
-
-  if (!booking) {
-    throw createHttpError(404, 'Booking not found');
-  }
-
-  if (user && booking.user.toString() !== user._id.toString()) {
-    throw createHttpError(403, 'You do not have permission to pay for this booking');
-  }
-
-  await expirePendingBookingIfNeeded(booking, ParkingModel);
-
-  if (booking.status === 'cancelled' || booking.status === 'completed') {
-    throw createHttpError(409, 'This booking cannot be paid');
-  }
-
+async function createConfirmedPaidBooking(bookingInput, user, deps = {}) {
+  const booking = await createConfirmedBooking(bookingInput, user, deps);
+  await notifyBookingConfirmed(booking, deps);
   return booking;
 }
 
-async function expirePendingBookingIfNeeded(booking, ParkingModel) {
-  if (
-    booking.paymentStatus === 'pending' &&
-    booking.status === 'pending' &&
-    booking.paymentExpiresAt &&
-    Date.now() > new Date(booking.paymentExpiresAt).getTime()
-  ) {
-    await cancelPendingBooking(booking, ParkingModel, 'failed');
-    throw createHttpError(409, 'Payment window expired');
+async function createConfirmedPaidBookingIdempotently(bookingInput, user, orderId, deps = {}) {
+  try {
+    return await createConfirmedPaidBooking(bookingInput, user, deps);
+  } catch (error) {
+    if (error?.code !== 11000 || !orderId || typeof deps.BookingModel?.findOne !== 'function') {
+      throw error;
+    }
+
+    const existing = await deps.BookingModel.findOne({ razorpayOrderId: orderId });
+    if (!existing) {
+      throw error;
+    }
+
+    return serializeBooking(existing);
   }
 }
 
-async function cancelPendingBooking(booking, ParkingModel, paymentStatus = 'failed') {
-  const shouldRestoreSlots = booking.status === 'pending';
-  booking.paymentStatus = paymentStatus;
-  booking.status = 'cancelled';
-  booking.cancelledBy = 'system';
-  await booking.save();
-
-  if (shouldRestoreSlots) {
-    await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel });
-    console.log('Booking Cancelled');
-  }
-}
-
-async function markBookingPaid(booking, deps = {}) {
-  booking.paymentStatus = 'paid';
-  booking.status = 'confirmed';
-  await booking.save();
-  await notifyBookingConfirmed(booking, deps);
-}
-
-function validatePaymentAmount(booking, razorpayOrder) {
-  const expectedAmount = Math.round(Number(booking.totalAmount) * 100);
+function validatePaymentAmount(totalAmount, razorpayOrder) {
+  const expectedAmount = Math.round(Number(totalAmount) * 100);
 
   if (!razorpayOrder || Number(razorpayOrder.amount) !== expectedAmount) {
     throw createHttpError(400, 'Payment amount mismatch');
   }
 }
 
+function normalizeBookingInput(input) {
+  return {
+    parking: input.parking,
+    vehicleType: input.vehicleType,
+    bookingDate: input.bookingDate,
+    startTime: input.startTime,
+    endTime: input.endTime,
+    slotCount: Number(input.slotCount)
+  };
+}
+
+async function validatePaymentBookingRequest(BookingModel, ParkingModel, bookingInput, user) {
+  if (user?.status === 'suspended') {
+    throw createHttpError(403, 'Your account has been suspended. You cannot create new bookings.');
+  }
+
+  const inputValidation = validatePaymentBookingInput(bookingInput);
+  if (!inputValidation.valid) {
+    throw createHttpError(400, formatValidationErrors(inputValidation.errors));
+  }
+
+  const parking = await ParkingModel.findOne({
+    _id: bookingInput.parking,
+    verificationStatus: 'approved',
+    isActive: true
+  });
+
+  if (!parking) {
+    throw createHttpError(404, 'Parking listing not found');
+  }
+
+  if (!parking.vehicleTypes.includes(bookingInput.vehicleType)) {
+    throw createHttpError(409, 'Vehicle type is not supported by this parking listing');
+  }
+
+  const occupiedSlots = await countPaidOverlappingSlots(BookingModel, bookingInput);
+  const slotValidation = validateSlotAvailability(
+    bookingInput.slotCount,
+    parking.totalSlots,
+    occupiedSlots
+  );
+
+  if (!slotValidation.valid) {
+    throw createHttpError(409, slotValidation.error);
+  }
+
+  return parking;
+}
+
+async function countPaidOverlappingSlots(BookingModel, bookingInput) {
+  const aggregate = BookingModel.aggregate([
+    { $match: buildBookingOverlapFilter(bookingInput) },
+    { $group: { _id: null, slotCount: { $sum: '$slotCount' } } }
+  ]);
+  const result = await aggregate;
+  return result[0]?.slotCount ?? 0;
+}
+
+function buildOrderNotes(bookingInput, user, totalAmount) {
+  return {
+    userId: user._id.toString(),
+    parking: bookingInput.parking.toString(),
+    vehicleType: bookingInput.vehicleType,
+    bookingDate: bookingInput.bookingDate,
+    startTime: bookingInput.startTime,
+    endTime: bookingInput.endTime,
+    slotCount: String(bookingInput.slotCount),
+    totalAmount: String(totalAmount)
+  };
+}
+
+function extractBookingInputFromOrder(order, fallbackInput = {}) {
+  return {
+    parking: getOrderNote(order, 'parking') ?? fallbackInput.parking,
+    vehicleType: getOrderNote(order, 'vehicleType') ?? fallbackInput.vehicleType,
+    bookingDate: getOrderNote(order, 'bookingDate') ?? fallbackInput.bookingDate,
+    startTime: getOrderNote(order, 'startTime') ?? fallbackInput.startTime,
+    endTime: getOrderNote(order, 'endTime') ?? fallbackInput.endTime,
+    slotCount: Number(getOrderNote(order, 'slotCount') ?? fallbackInput.slotCount)
+  };
+}
+
+function getOrderNote(order, key) {
+  return order?.notes?.[key] ?? order?.notes?.notes?.[key];
+}
+
 function logPaymentVerification(input) {
   if (env.NODE_ENV === 'development') {
     console.log('Payment verification:', {
-      bookingId: input.bookingId,
       orderId: input.razorpay_order_id,
       paymentId: input.razorpay_payment_id
     });

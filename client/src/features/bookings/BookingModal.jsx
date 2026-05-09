@@ -1,25 +1,12 @@
 import { useMemo, useState } from 'react';
 import { CalendarCheck, X } from 'lucide-react';
 import { getApiErrorMessage } from '../../lib/getApiErrorMessage.js';
-import { createBooking, createPaymentOrder, verifyPayment } from './bookingApi.js';
+import { createPaymentOrder, verifyPayment } from './bookingApi.js';
 import { getBookingSubmitPlan } from './bookingIntent.js';
 import { calculateEstimatedTotal, formatDuration, getBookingDurationHours, validateBookingForm } from './bookingUtils.js';
 
-export function BookingModal({ initialValues = {}, isAuthenticated = false, onClose, onRequireAuth, onSuccess, parking }) {
-  const [form, setForm] = useState(() => {
-    const types = parking.vehicleTypes ?? [];
-    return {
-      bookingDate: initialValues.date ?? '',
-      startTime: initialValues.startTime ?? '',
-      endTime: initialValues.endTime ?? '',
-      // Pre-select when there is exactly one option (unambiguous).
-      // For multiple options the user must choose explicitly; for zero options
-      // (data not yet loaded) stay empty — the select will be empty anyway.
-      vehicleType: initialValues.vehicleType?.trim() || (types.length === 1 ? types[0] : ''),
-      slotCount: initialValues.slotCount ?? 1,
-      coupon: ''
-    };
-  });
+export function BookingModal({ initialValues = {}, isAuthenticated = false, onClose, onPaymentAttemptCleared, onRequireAuth, onSuccess, parking }) {
+  const [form, setForm] = useState(() => buildInitialBookingForm(parking, initialValues));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
@@ -101,19 +88,14 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
     setIsSubmitting(true);
 
     try {
-      console.log('[BookingModal] Creating booking...');
-      const booking = await createBooking({
-        parking: parking.id,
+      console.log('[BookingModal] Creating payment order...');
+      const paymentOrder = await createPaymentOrder({
+        parking: parking._id || parking.id,
         vehicleType: form.vehicleType,
         bookingDate: form.bookingDate,
         startTime: form.startTime,
         endTime: form.endTime,
-        slotCount: Number(form.slotCount)
-      });
-      console.log('[BookingModal] Booking created:', booking.bookingCode);
-      
-      const paymentOrder = await createPaymentOrder({
-        bookingId: booking.id,
+        slotCount: Number(form.slotCount),
         coupon: form.coupon || undefined
       });
 
@@ -130,7 +112,9 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
       onSuccess(paidBooking);
     } catch (apiError) {
       console.error('[BookingModal] Booking failed:', apiError);
-      setError(getApiErrorMessage(apiError, 'Unable to reserve this time slot'));
+      setForm(buildFreshBookingForm(parking));
+      onPaymentAttemptCleared?.();
+      setError(getApiErrorMessage(apiError, apiError.message || 'Unable to reserve this time slot'));
     } finally {
       setIsSubmitting(false);
     }
@@ -207,7 +191,7 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
                   ))}
                 </select>
               </label>
-              <Field label="Slots" min="1" max={parking.availableSlots} name="slotCount" onChange={updateField} required type="number" value={form.slotCount} />
+              <Field label="Slots" min="1" max={parking.totalSlots} name="slotCount" onChange={updateField} required type="number" value={form.slotCount} />
             </div>
 
             <div className="app-card-muted rounded-lg">
@@ -236,13 +220,13 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
 
             {error ? (
               <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {error.includes('time slot') ? 'That time overlaps with another booking. Try a different slot.' : error}
+                {error}
               </p>
             ) : null}
 
             <button
               className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={isSubmitting || parking.availableSlots < 1}
+              disabled={isSubmitting || parking.totalSlots < 1}
               type="submit"
             >
               {isSubmitting ? 'Processing...' : isAuthenticated ? 'Book and pay' : 'Continue to sign in'}
@@ -252,6 +236,32 @@ export function BookingModal({ initialValues = {}, isAuthenticated = false, onCl
       </div>
     </div>
   );
+}
+
+function buildInitialBookingForm(parking, initialValues = {}) {
+  const freshForm = buildFreshBookingForm(parking);
+
+  return {
+    ...freshForm,
+    bookingDate: initialValues.date ?? freshForm.bookingDate,
+    startTime: initialValues.startTime ?? freshForm.startTime,
+    endTime: initialValues.endTime ?? freshForm.endTime,
+    vehicleType: initialValues.vehicleType?.trim() || freshForm.vehicleType,
+    slotCount: initialValues.slotCount ?? freshForm.slotCount
+  };
+}
+
+function buildFreshBookingForm(parking) {
+  const types = parking.vehicleTypes ?? [];
+
+  return {
+    bookingDate: '',
+    startTime: '',
+    endTime: '',
+    vehicleType: types.length === 1 ? types[0] : '',
+    slotCount: 1,
+    coupon: ''
+  };
 }
 
 async function openRazorpayCheckout(paymentOrder, parkingTitle) {
@@ -268,7 +278,6 @@ async function openRazorpayCheckout(paymentOrder, parkingTitle) {
       handler: async (response) => {
         try {
           const booking = await verifyPayment({
-            bookingId: paymentOrder.booking.id,
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature: response.razorpay_signature

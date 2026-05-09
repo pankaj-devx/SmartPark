@@ -9,27 +9,26 @@ import {
   formatValidationErrors,
   buildOverlapQuery
 } from '../utils/bookingValidation.js';
-import { clampAvailableSlots, decreaseAvailableSlots, increaseAvailableSlots } from './slot.service.js';
+import { clampAvailableSlots, increaseAvailableSlots } from './slot.service.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
+const CAPACITY_BOOKING_STATUSES = ['confirmed'];
+const KOLKATA_OFFSET_MINUTES = 330;
 
 /**
  * Returns true only when the booking start datetime is at least 30 minutes in the future.
  *
- * Both arguments are compared against the current server time with no manual
- * timezone offset — Date parsing of "YYYY-MM-DDTHH:mm:00" uses the local
- * system timezone, which is consistent with how computeBookingStatus works.
+ * Both arguments are interpreted as Asia/Kolkata wall-clock time so production
+ * servers in other timezones evaluate the same booking window consistently.
  *
  * @param {string} bookingDate  "YYYY-MM-DD"
  * @param {string} startTime    "HH:mm"
  * @returns {boolean}
  */
 export function isFutureBooking(bookingDate, startTime) {
-  const now = new Date();
-  // Add 30 minute buffer (production requirement)
-  now.setMinutes(now.getMinutes() + 30);
-  const bookingDateTime = new Date(`${bookingDate}T${startTime}:00`);
-  return bookingDateTime > now;
+  const minimumStartTime = Date.now() + 30 * 60 * 1000;
+  const bookingDateTime = getKolkataDateTimeMs(bookingDate, startTime);
+  return bookingDateTime > minimumStartTime;
 }
 
 /**
@@ -51,9 +50,9 @@ export function computeBookingStatus(booking) {
   }
 
   try {
-    const now = new Date();
-    const start = new Date(`${booking.bookingDate}T${booking.startTime}:00`);
-    const end   = new Date(`${booking.bookingDate}T${booking.endTime}:00`);
+    const now = Date.now();
+    const start = getKolkataDateTimeMs(booking.bookingDate, booking.startTime);
+    const end = getKolkataDateTimeMs(booking.bookingDate, booking.endTime);
 
     if (now < start) return 'upcoming';
     if (now >= start && now <= end) return 'ongoing';
@@ -82,9 +81,7 @@ export async function reconcileExpiredBookings(parkingId, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
 
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const { date: todayStr, time: currentTime } = getKolkataNowParts();
 
   // Find all active bookings for this parking whose end window has passed.
   // A booking is expired when:
@@ -206,6 +203,7 @@ export function serializeBooking(booking) {
     slotCount: booking.slotCount,
     totalAmount: booking.totalAmount,
     status: booking.status,
+    bookingStatus: booking.bookingStatus ?? (booking.status === 'cancelled' ? 'cancelled' : 'confirmed'),
     paymentStatus: booking.paymentStatus ?? 'pending',
     isTestPayment: booking.isTestPayment ?? false,
     paymentExpiresAt: booking.paymentExpiresAt,
@@ -226,7 +224,7 @@ export function serializeBooking(booking) {
  * @returns {object} - MongoDB query filter
  */
 export function buildBookingOverlapFilter(input) {
-  return buildOverlapQuery(input, ACTIVE_BOOKING_STATUSES);
+  return buildOverlapQuery(input, CAPACITY_BOOKING_STATUSES);
 }
 
 export function calculateTotalAmount(parking, input) {
@@ -239,6 +237,10 @@ export function calculateTotalAmount(parking, input) {
 }
 
 export async function createBooking(input, user, deps = {}) {
+  return createConfirmedBooking(input, user, { ...deps, paymentStatus: 'pending', status: 'pending' });
+}
+
+export async function createConfirmedBooking(input, user, deps = {}) {
   // 1. Check user status
   if (user.status === 'suspended') {
     throw createHttpError(403, 'Your account has been suspended. You cannot create new bookings.');
@@ -258,6 +260,9 @@ export async function createBooking(input, user, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const ParkingModel = deps.ParkingModel ?? Parking;
   const runInTransaction = deps.runInTransaction ?? withTransaction;
+  const paymentStatus = deps.paymentStatus ?? 'paid';
+  const bookingStatus = deps.bookingStatus ?? 'confirmed';
+  const status = deps.status ?? 'confirmed';
 
   // 4. Use transaction to prevent race conditions
   return runInTransaction(async (session) => {
@@ -270,6 +275,7 @@ export async function createBooking(input, user, deps = {}) {
     }
 
     // 7. Check for overlapping bookings (CRITICAL: prevents double booking)
+    await lockParkingForCapacityCheck(ParkingModel, parking._id, session);
     const overlappingSlots = await countOverlappingSlots(BookingModel, input, session);
 
     // 8. Validate slot availability
@@ -283,10 +289,7 @@ export async function createBooking(input, user, deps = {}) {
       throw createHttpError(409, slotValidation.error);
     }
 
-    // 9. Atomic slot reservation (prevents race condition)
-    await decreaseAvailableSlots(parking._id, input.slotCount, { ParkingModel, session });
-
-    // 10. Generate unique booking code
+    // 9. Generate unique booking code
     const bookingCode = await generateUniqueCode(
       CODE_PREFIXES.BOOKING,
       async (code) => {
@@ -295,7 +298,7 @@ export async function createBooking(input, user, deps = {}) {
       }
     );
 
-    // 11. Create booking
+    // 10. Create booking only after the caller has verified payment.
     const [booking] = await BookingModel.create(
       [
         {
@@ -308,10 +311,13 @@ export async function createBooking(input, user, deps = {}) {
           endTime: input.endTime,
           slotCount: input.slotCount,
           totalAmount: calculateTotalAmount(parking, input),
-          status: 'pending',
-          paymentStatus: 'pending',
-          isTestPayment: false,
-          paymentExpiresAt: new Date(Date.now() + 10 * 60 * 1000)
+          status,
+          bookingStatus,
+          paymentStatus,
+          isTestPayment: deps.isTestPayment ?? false,
+          razorpayOrderId: deps.razorpayOrderId ?? '',
+          razorpayPaymentId: deps.razorpayPaymentId ?? '',
+          paymentExpiresAt: null
         }
       ],
       { session }
@@ -381,9 +387,13 @@ export async function cancelBooking(id, user, deps = {}) {
       throw createHttpError(409, 'Completed bookings cannot be cancelled');
     }
 
+    if (!isBeforeBookingStart(booking)) {
+      throw createHttpError(409, 'Bookings cannot be cancelled after the start time.');
+    }
+
     if (booking.status !== 'cancelled') {
-      await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
       booking.status = 'cancelled';
+      booking.bookingStatus = 'cancelled';
       booking.cancelledBy = user.role === 'admin' ? 'admin' : 'user';
       await booking.save({ session });
       await clampAvailableSlots(booking.parking, { ParkingModel, session });
@@ -468,6 +478,31 @@ async function countOverlappingSlots(BookingModel, input, session) {
   return result[0]?.slotCount ?? 0;
 }
 
+async function lockParkingForCapacityCheck(ParkingModel, parkingId, session) {
+  if (typeof ParkingModel.findOneAndUpdate !== 'function') {
+    return;
+  }
+
+  const query = ParkingModel.findOneAndUpdate(
+    {
+      _id: parkingId,
+      verificationStatus: 'approved',
+      isActive: true
+    },
+    { $set: { updatedAt: new Date() } },
+    { new: true, session }
+  );
+
+  const parking =
+    session && typeof query.session === 'function'
+      ? await query.session(session)
+      : await query;
+
+  if (!parking) {
+    throw createHttpError(404, 'Parking listing not found');
+  }
+}
+
 function canAccessBooking(user, booking) {
   return user.role === 'admin' || booking.user.toString() === user._id.toString();
 }
@@ -475,4 +510,22 @@ function canAccessBooking(user, booking) {
 function getMinutes(value) {
   const [hours, minutes] = value.split(':').map(Number);
   return hours * 60 + minutes;
+}
+
+function isBeforeBookingStart(booking) {
+  return Date.now() < getKolkataDateTimeMs(booking.bookingDate, booking.startTime);
+}
+
+function getKolkataDateTimeMs(bookingDate, time) {
+  const [year, month, day] = bookingDate.split('-').map(Number);
+  const [hours, minutes] = time.split(':').map(Number);
+  return Date.UTC(year, month - 1, day, hours, minutes) - KOLKATA_OFFSET_MINUTES * 60 * 1000;
+}
+
+function getKolkataNowParts(now = new Date()) {
+  const kolkataNow = new Date(now.getTime() + KOLKATA_OFFSET_MINUTES * 60 * 1000);
+  return {
+    date: kolkataNow.toISOString().slice(0, 10),
+    time: kolkataNow.toISOString().slice(11, 16)
+  };
 }

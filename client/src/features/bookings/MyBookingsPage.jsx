@@ -288,8 +288,8 @@ function BookingGroup({ bookings, emptyHidden = false, onCancel, onReview, revie
 function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
   const parking = booking.parkingDetail;
   const computedStatus = getComputedStatus(booking);
-  const isUpcoming = computedStatus === 'upcoming';
   const isCompleted = computedStatus === 'completed' || booking.status === 'completed';
+  const canCancel = isCancellableBooking(booking);
 
   return (
     <article className="flex flex-col rounded-xl border bg-white shadow-sm" style={{ borderColor: 'var(--app-border)' }}>
@@ -366,7 +366,7 @@ function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
             Rebook
           </Link>
         ) : null}
-        {isUpcoming && onCancel ? (
+        {canCancel && onCancel ? (
           <button
             className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
             onClick={() => onCancel(booking)}
@@ -396,6 +396,25 @@ function BookingCard({ booking, isReviewed = false, onCancel, onReview }) {
       </div>
     </article>
   );
+}
+
+function isCancellableBooking(booking) {
+  return (
+    booking.status === 'confirmed' &&
+    booking.paymentStatus === 'paid' &&
+    booking.bookingStatus !== 'cancelled' &&
+    isBeforeBookingStart(booking)
+  );
+}
+
+function isBeforeBookingStart(booking) {
+  return Date.now() < getKolkataDateTimeMs(booking.bookingDate, booking.startTime);
+}
+
+function getKolkataDateTimeMs(bookingDate, time) {
+  const [year, month, day] = bookingDate.split('-').map(Number);
+  const [hours, minutes] = time.split(':').map(Number);
+  return Date.UTC(year, month - 1, day, hours, minutes) - 330 * 60 * 1000;
 }
 
 function DetailChip({ icon: Icon, label }) {

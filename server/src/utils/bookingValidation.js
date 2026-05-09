@@ -102,11 +102,13 @@ export function doTimesOverlap(start1, end1, start2, end2) {
  * @param {string[]} activeStatuses - Active booking statuses
  * @returns {object} - MongoDB query filter
  */
-export function buildOverlapQuery(input, activeStatuses = ['pending', 'confirmed']) {
+export function buildOverlapQuery(input, activeStatuses = ['confirmed']) {
   return {
     parking: input.parking,
     bookingDate: input.bookingDate,
     status: { $in: activeStatuses },
+    bookingStatus: { $ne: 'cancelled' },
+    paymentStatus: 'paid',
     // Overlap condition: (startTime < input.endTime) AND (endTime > input.startTime)
     startTime: { $lt: input.endTime },
     endTime: { $gt: input.startTime }
@@ -255,6 +257,17 @@ export function validateBookingInput(input) {
     valid: errors.length === 0,
     errors
   };
+}
+
+export function validatePaymentBookingInput(input) {
+  return validateBookingInput({
+    parking: input.parking,
+    vehicleType: input.vehicleType,
+    bookingDate: input.bookingDate,
+    startTime: input.startTime,
+    endTime: input.endTime,
+    slotCount: input.slotCount
+  });
 }
 
 /**

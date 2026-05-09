@@ -1,17 +1,14 @@
 import {
   cancelBooking,
-  createBooking,
   getBookingDetail,
   listMyBookings
 } from '../services/booking.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const createBookingReservation = asyncHandler(async (req, res) => {
-  const booking = await createBooking(req.body, req.user);
-
-  res.status(201).json({
-    success: true,
-    data: { booking }
+  res.status(410).json({
+    success: false,
+    message: 'Bookings are confirmed only after successful payment verification. Use /payments/create-order first.'
   });
 });
 
