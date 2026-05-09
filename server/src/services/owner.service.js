@@ -4,6 +4,7 @@ import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
 import { serializeBooking } from './booking.service.js';
 import { computeLiveAvailableSlotsForMany } from './booking.service.js';
+import { calculateOwnerAnalytics } from './analytics.service.js';
 import { serializeParking } from './parking.service.js';
 import { increaseAvailableSlots } from './slot.service.js';
 
@@ -38,9 +39,10 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
       .populate('parking', 'title city state address');
   }
 
-  const [bookings, parkings] = await Promise.all([
+  const [bookings, parkings, ownerAnalytics] = await Promise.all([
     bookingsQuery.sort({ bookingDate: 1, startTime: 1, _id: 1 }).lean(),
-    getOwnerParkings(user, deps)
+    getOwnerParkings(user, deps),
+    calculateOwnerAnalytics(user._id, deps)
   ]);
 
   const serializedBookings = bookings.map(serializeOwnerBooking);
@@ -58,7 +60,7 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
 
   return {
     bookings: serializedBookings,
-    summary: buildOwnerSummary(serializedBookings, serializedParkings),
+    summary: buildOwnerSummary(serializedBookings, serializedParkings, ownerAnalytics),
     parkings: serializedParkings
   };
 }
@@ -188,7 +190,7 @@ async function findBookingForOwner(BookingModel, ParkingModel, id, user, session
   return booking;
 }
 
-function buildOwnerSummary(bookings, parkings) {
+function buildOwnerSummary(bookings, parkings, ownerAnalytics = {}) {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -213,8 +215,8 @@ function buildOwnerSummary(bookings, parkings) {
       ACTIVE_STATUSES.includes(booking.status) &&
       (booking.bookingDate > today || (booking.bookingDate === today && booking.endTime > currentTime))
   ).length;
-  const revenueBookings = bookings.filter(isPaidRevenueBooking);
-  const estimatedRevenue = revenueBookings.reduce((sum, booking) => sum + booking.totalAmount, 0);
+  const revenueByListing = ownerAnalytics.revenueByListing ?? [];
+  const estimatedRevenue = ownerAnalytics.totalRevenue ?? 0;
 
   return {
     occupiedSlotsNow,
@@ -227,16 +229,7 @@ function buildOwnerSummary(bookings, parkings) {
       cancelled: bookings.filter((booking) => booking.status === 'cancelled').length,
       completed: bookings.filter((booking) => booking.status === 'completed').length
     },
-    perListingEarnings: parkings.map((parking) => {
-      const listingBookings = revenueBookings.filter((booking) => booking.parking === parking.id);
-
-      return {
-        parking: parking.id,
-        title: parking.title,
-        bookings: listingBookings.length,
-        estimatedRevenue: listingBookings.reduce((sum, booking) => sum + booking.totalAmount, 0)
-      };
-    })
+    perListingEarnings: revenueByListing
   };
 }
 
@@ -266,8 +259,4 @@ function serializeOwnerBooking(booking) {
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt
   };
-}
-
-function isPaidRevenueBooking(booking) {
-  return booking.paymentStatus === 'paid' && booking.bookingStatus !== 'cancelled';
 }

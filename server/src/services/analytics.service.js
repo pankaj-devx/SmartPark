@@ -2,6 +2,8 @@ import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
 
+const REVENUE_BOOKING_STATUSES = ['confirmed', 'completed'];
+
 /**
  * Driver analytics — personal usage summary for a given user.
  * @param {import('mongoose').Types.ObjectId} userId
@@ -40,14 +42,17 @@ export async function getDriverAnalytics(userId) {
  * @param {import('mongoose').Types.ObjectId} ownerId
  */
 export async function getOwnerAnalytics(ownerId) {
-  // Collect all parking IDs that belong to this owner
-  const ownerParkings = await Parking.find({ owner: ownerId }, '_id');
-  const parkingIds = ownerParkings.map((p) => p._id);
+  const ownerAnalytics = await calculateOwnerAnalytics(ownerId);
+  const parkingIds = ownerAnalytics.parkingIds;
 
   if (parkingIds.length === 0) {
     return {
       totalEarnings: 0,
       totalBookings: 0,
+      totalRevenue: 0,
+      revenueByListing: [],
+      occupancyStats: ownerAnalytics.occupancyStats,
+      bookingTrend: [],
       bookingsPerDay: [],
       peakHours: []
     };
@@ -55,31 +60,7 @@ export async function getOwnerAnalytics(ownerId) {
 
   const matchStage = { $match: { parking: { $in: parkingIds } } };
 
-  const [summary, bookingsPerDay, peakHours] = await Promise.all([
-    Booking.aggregate([
-      matchStage,
-      {
-        $group: {
-          _id: null,
-          totalEarnings: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ['$paymentStatus', 'paid'] },
-                    { $ne: ['$bookingStatus', 'cancelled'] }
-                  ]
-                },
-                '$totalAmount',
-                0
-              ]
-            }
-          },
-          totalBookings: { $sum: 1 }
-        }
-      }
-    ]),
-
+  const [bookingsPerDay, peakHours] = await Promise.all([
     // Group by bookingDate (stored as "YYYY-MM-DD" string) — this is the
     // actual parking date the customer chose, not the record creation time.
     // $ifNull falls back to createdAt-derived date for any legacy document
@@ -124,8 +105,12 @@ export async function getOwnerAnalytics(ownerId) {
   ]);
 
   return {
-    totalEarnings: summary[0]?.totalEarnings ?? 0,
-    totalBookings: summary[0]?.totalBookings ?? 0,
+    totalEarnings: ownerAnalytics.totalRevenue,
+    totalBookings: ownerAnalytics.totalBookings,
+    totalRevenue: ownerAnalytics.totalRevenue,
+    revenueByListing: ownerAnalytics.revenueByListing,
+    occupancyStats: ownerAnalytics.occupancyStats,
+    bookingTrend: ownerAnalytics.bookingTrend,
     bookingsPerDay,
     peakHours
   };
@@ -134,6 +119,133 @@ export async function getOwnerAnalytics(ownerId) {
 /**
  * Admin analytics — system-wide overview.
  */
+export async function calculateOwnerAnalytics(ownerId, deps = {}) {
+  const BookingModel = deps.BookingModel ?? Booking;
+  const ParkingModel = deps.ParkingModel ?? Parking;
+
+  const ownerParkings = await findOwnerParkingsForAnalytics(ParkingModel, ownerId);
+  const parkingIds = ownerParkings.map((parking) => parking._id);
+
+  if (parkingIds.length === 0) {
+    return {
+      parkingIds: [],
+      totalBookings: 0,
+      totalRevenue: 0,
+      revenueByListing: [],
+      occupancyStats: {
+        totalSlots: 0,
+        availableSlots: 0,
+        occupiedSlots: 0
+      },
+      bookingTrend: []
+    };
+  }
+
+  const revenueMatch = {
+    parking: { $in: parkingIds },
+    paymentStatus: 'paid',
+    bookingStatus: { $ne: 'cancelled' },
+    status: { $in: REVENUE_BOOKING_STATUSES }
+  };
+
+  const [summary, revenueByListingRows, bookingTrend] = await Promise.all([
+    BookingModel.aggregate([
+      { $match: revenueMatch },
+      {
+        $group: {
+          _id: null,
+          totalBookings: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' }
+        }
+      }
+    ]),
+    BookingModel.aggregate([
+      { $match: revenueMatch },
+      {
+        $group: {
+          _id: '$parking',
+          bookings: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' }
+        }
+      }
+    ]),
+    BookingModel.aggregate([
+      { $match: revenueMatch },
+      {
+        $group: {
+          _id: {
+            $ifNull: [
+              '$bookingDate',
+              { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+            ]
+          },
+          bookings: { $sum: 1 },
+          revenue: { $sum: '$totalAmount' }
+        }
+      },
+      { $match: { _id: { $ne: null } } },
+      { $sort: { _id: 1 } },
+      { $limit: 30 }
+    ])
+  ]);
+
+  const revenueByListingMap = new Map(
+    revenueByListingRows.map((row) => [
+      row._id.toString(),
+      {
+        bookings: row.bookings,
+        totalRevenue: row.totalRevenue
+      }
+    ])
+  );
+
+  const revenueByListing = ownerParkings.map((parking) => {
+    const parkingId = parking._id.toString();
+    const revenue = revenueByListingMap.get(parkingId) ?? { bookings: 0, totalRevenue: 0 };
+
+    return {
+      parking: parkingId,
+      title: parking.title,
+      bookings: revenue.bookings,
+      totalRevenue: revenue.totalRevenue,
+      estimatedRevenue: revenue.totalRevenue
+    };
+  });
+
+  const totalSlots = ownerParkings.reduce((sum, parking) => sum + (parking.totalSlots ?? 0), 0);
+  const availableSlots = ownerParkings.reduce((sum, parking) => sum + (parking.availableSlots ?? 0), 0);
+
+  return {
+    parkingIds,
+    totalBookings: summary[0]?.totalBookings ?? 0,
+    totalRevenue: summary[0]?.totalRevenue ?? 0,
+    revenueByListing,
+    occupancyStats: {
+      totalSlots,
+      availableSlots,
+      occupiedSlots: Math.max(0, totalSlots - availableSlots)
+    },
+    bookingTrend
+  };
+}
+
+async function findOwnerParkingsForAnalytics(ParkingModel, ownerId) {
+  const query = ParkingModel.find({ owner: ownerId });
+
+  if (typeof query.lean === 'function') {
+    return query.lean();
+  }
+
+  if (typeof query.sort === 'function') {
+    const sortedQuery = query.sort({ createdAt: -1, _id: 1 });
+    if (typeof sortedQuery.lean === 'function') {
+      return sortedQuery.lean();
+    }
+  }
+
+  return query;
+}
+
 export async function getAdminAnalytics() {
   const [totalUsers, totalOwners, totalDrivers, totalBookings, pendingParkings, approvedParkings, rejectedParkings] =
     await Promise.all([
