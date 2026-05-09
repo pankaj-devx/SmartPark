@@ -5,14 +5,15 @@ import { createHttpError } from '../utils/createHttpError.js';
 import { generateUniqueCode, CODE_PREFIXES } from '../utils/codeGenerator.js';
 import {
   validateBookingInput,
-  validateSlotAvailability,
-  formatValidationErrors,
-  buildOverlapQuery
+  formatValidationErrors
 } from '../utils/bookingValidation.js';
 import { clampAvailableSlots, increaseAvailableSlots } from './slot.service.js';
+import {
+  calculateOccupiedSlots,
+  buildOccupancyFilter
+} from './occupancy.service.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
-const CAPACITY_BOOKING_STATUSES = ['confirmed'];
 const KOLKATA_OFFSET_MINUTES = 330;
 
 /**
@@ -216,15 +217,13 @@ export function serializeBooking(booking) {
 /**
  * Build optimized query filter for finding overlapping bookings
  * Uses indexed fields for performance
- * Only considers active bookings (pending, confirmed)
- * 
- * Overlap logic: (startTime < existingEndTime) AND (endTime > existingStartTime)
+ * Uses centralized occupancy service for consistent business logic
  * 
  * @param {object} input - Booking input with parking, bookingDate, startTime, endTime
  * @returns {object} - MongoDB query filter
  */
 export function buildBookingOverlapFilter(input) {
-  return buildOverlapQuery(input, CAPACITY_BOOKING_STATUSES);
+  return buildOccupancyFilter(input);
 }
 
 export function calculateTotalAmount(parking, input) {
@@ -276,17 +275,29 @@ export async function createConfirmedBooking(input, user, deps = {}) {
 
     // 7. Check for overlapping bookings (CRITICAL: prevents double booking)
     await lockParkingForCapacityCheck(ParkingModel, parking._id, session);
-    const overlappingSlots = await countOverlappingSlots(BookingModel, input, session);
-
-    // 8. Validate slot availability
-    const slotValidation = validateSlotAvailability(
-      input.slotCount,
-      parking.totalSlots,
-      overlappingSlots
+    const overlappingSlots = await calculateOccupiedSlots(
+      parking._id,
+      {
+        bookingDate: input.bookingDate,
+        startTime: input.startTime,
+        endTime: input.endTime
+      },
+      { BookingModel }
     );
 
-    if (!slotValidation.valid) {
-      throw createHttpError(409, slotValidation.error);
+    // 8. Validate slot availability
+    const availableSlots = Math.max(0, parking.totalSlots - overlappingSlots);
+
+    if (input.slotCount < 1) {
+      throw createHttpError(400, 'At least one slot must be requested');
+    }
+
+    if (input.slotCount > availableSlots) {
+      const error =
+        availableSlots === 0
+          ? 'No slots available for selected time'
+          : `Only ${availableSlots} slot(s) available for selected time`;
+      throw createHttpError(409, error);
     }
 
     // 9. Generate unique booking code
@@ -452,31 +463,7 @@ async function findBookingById(BookingModel, id, session) {
   return booking;
 }
 
-/**
- * Count overlapping slots for a given booking time window
- * Uses aggregation for performance with session support for transactions
- * 
- * This is critical for preventing double bookings:
- * - Finds all active bookings that overlap with the requested time
- * - Sums up their slot counts
- * - Returns total occupied slots during that time window
- * 
- * @param {Model} BookingModel - Booking model
- * @param {object} input - Booking input
- * @param {ClientSession} session - MongoDB session for transaction
- * @returns {Promise<number>} - Total overlapping slots
- */
-async function countOverlappingSlots(BookingModel, input, session) {
-  const pipeline = [
-    { $match: buildBookingOverlapFilter(input) },
-    { $group: { _id: null, slotCount: { $sum: '$slotCount' } } }
-  ];
 
-  const aggregate = BookingModel.aggregate(pipeline);
-  const result = session ? await aggregate.session(session) : await aggregate;
-
-  return result[0]?.slotCount ?? 0;
-}
 
 async function lockParkingForCapacityCheck(ParkingModel, parkingId, session) {
   if (typeof ParkingModel.findOneAndUpdate !== 'function') {

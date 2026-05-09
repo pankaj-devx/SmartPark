@@ -3,8 +3,6 @@ import assert from 'node:assert';
 import {
   validateBookingTime,
   doTimesOverlap,
-  buildOverlapQuery,
-  validateSlotAvailability,
   calculateDuration,
   validateBookingDate,
   validateBookingInput,
@@ -119,64 +117,6 @@ describe('Booking Validation', () => {
       
       // One minute overlap
       assert.strictEqual(doTimesOverlap('10:00', '11:00', '10:59', '12:00'), true);
-    });
-  });
-
-  describe('buildOverlapQuery', () => {
-    it('should build correct overlap query', () => {
-      const input = {
-        parking: 'parking123',
-        bookingDate: '2024-01-15',
-        startTime: '10:00',
-        endTime: '12:00'
-      };
-      
-      const query = buildOverlapQuery(input);
-      
-      assert.strictEqual(query.parking, 'parking123');
-      assert.strictEqual(query.bookingDate, '2024-01-15');
-      assert.deepStrictEqual(query.status, { $in: ['pending', 'confirmed'] });
-      assert.deepStrictEqual(query.startTime, { $lt: '12:00' });
-      assert.deepStrictEqual(query.endTime, { $gt: '10:00' });
-    });
-
-    it('should use custom active statuses', () => {
-      const input = {
-        parking: 'parking123',
-        bookingDate: '2024-01-15',
-        startTime: '10:00',
-        endTime: '12:00'
-      };
-      
-      const query = buildOverlapQuery(input, ['confirmed']);
-      assert.deepStrictEqual(query.status, { $in: ['confirmed'] });
-    });
-  });
-
-  describe('validateSlotAvailability', () => {
-    it('should validate available slots', () => {
-      const result = validateSlotAvailability(2, 10, 5);
-      assert.strictEqual(result.valid, true);
-      assert.strictEqual(result.error, null);
-      assert.strictEqual(result.availableSlots, 5);
-    });
-
-    it('should reject when not enough slots', () => {
-      const result = validateSlotAvailability(6, 10, 5);
-      assert.strictEqual(result.valid, false);
-      assert.match(result.error, /Only 5 slot/);
-    });
-
-    it('should reject when no slots available', () => {
-      const result = validateSlotAvailability(1, 10, 10);
-      assert.strictEqual(result.valid, false);
-      assert.match(result.error, /No slots available/);
-    });
-
-    it('should reject when requesting less than 1 slot', () => {
-      const result = validateSlotAvailability(0, 10, 5);
-      assert.strictEqual(result.valid, false);
-      assert.match(result.error, /At least one slot/);
     });
   });
 

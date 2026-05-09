@@ -95,63 +95,6 @@ export function doTimesOverlap(start1, end1, start2, end2) {
 }
 
 /**
- * Build optimized query filter for finding overlapping bookings
- * Uses indexed fields for performance
- * 
- * @param {object} input - Booking input
- * @param {string[]} activeStatuses - Active booking statuses
- * @returns {object} - MongoDB query filter
- */
-export function buildOverlapQuery(input, activeStatuses = ['confirmed']) {
-  return {
-    parking: input.parking,
-    bookingDate: input.bookingDate,
-    status: { $in: activeStatuses },
-    bookingStatus: { $ne: 'cancelled' },
-    paymentStatus: 'paid',
-    // Overlap condition: (startTime < input.endTime) AND (endTime > input.startTime)
-    startTime: { $lt: input.endTime },
-    endTime: { $gt: input.startTime }
-  };
-}
-
-/**
- * Validate slot availability
- * 
- * @param {number} requestedSlots - Number of slots requested
- * @param {number} totalSlots - Total parking slots
- * @param {number} occupiedSlots - Currently occupied slots
- * @returns {{ valid: boolean, error: string | null, availableSlots: number }}
- */
-export function validateSlotAvailability(requestedSlots, totalSlots, occupiedSlots) {
-  const availableSlots = totalSlots - occupiedSlots;
-  
-  if (requestedSlots < 1) {
-    return {
-      valid: false,
-      error: 'At least one slot must be requested',
-      availableSlots
-    };
-  }
-  
-  if (requestedSlots > availableSlots) {
-    return {
-      valid: false,
-      error: availableSlots === 0 
-        ? 'No slots available for selected time'
-        : `Only ${availableSlots} slot(s) available for selected time`,
-      availableSlots
-    };
-  }
-  
-  return {
-    valid: true,
-    error: null,
-    availableSlots
-  };
-}
-
-/**
  * Calculate booking duration in minutes
  * 
  * @param {string} startTime - "HH:mm"

@@ -8,8 +8,6 @@ import { calculateOwnerAnalytics } from './analytics.service.js';
 import { serializeParking } from './parking.service.js';
 import { increaseAvailableSlots } from './slot.service.js';
 
-const ACTIVE_STATUSES = ['pending', 'confirmed'];
-
 export async function getOwnerBookings(user, query = {}, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
   const parkingIds = await getOwnerParkingIds(user, query.parking, deps);
@@ -52,10 +50,26 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
     parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
     deps
   );
+  const occupancyByListing = new Map(
+    (ownerAnalytics.occupancyStats?.occupancyByListing ?? []).map((item) => [item.parking, item])
+  );
   const serializedParkings = parkings.map((p) => {
     const serialized = serializeParking(p);
     const live = liveSlots.get(p._id.toString());
-    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+    const occupancy = occupancyByListing.get(p._id.toString());
+
+    return {
+      ...serialized,
+      ...(live !== undefined ? { availableSlots: live } : {}),
+      ...(occupancy
+        ? {
+            availableSlots: Math.max(0, serialized.totalSlots - occupancy.reservedSlots),
+            occupiedSlots: occupancy.reservedSlots,
+            activeOccupiedSlots: occupancy.activeOccupiedSlots,
+            upcomingReservedSlots: occupancy.upcomingReservedSlots
+          }
+        : {})
+    };
   });
 
   return {
@@ -191,37 +205,16 @@ async function findBookingForOwner(BookingModel, ParkingModel, id, user, session
 }
 
 function buildOwnerSummary(bookings, parkings, ownerAnalytics = {}) {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  
-  // Calculate currently occupied slots (bookings happening RIGHT NOW)
-  const occupiedSlotsNow = bookings
-    .filter(
-      (booking) =>
-        ACTIVE_STATUSES.includes(booking.status) &&
-        booking.bookingDate === today &&
-        booking.startTime <= currentTime &&
-        booking.endTime > currentTime
-    )
-    .reduce((sum, booking) => sum + booking.slotCount, 0);
-  
-  // Calculate available slots from parking data
-  // availableSlots already accounts for ALL active bookings (current + future)
-  const availableSlotsNow = parkings.reduce((sum, parking) => sum + parking.availableSlots, 0);
-  
-  const upcomingReservations = bookings.filter(
-    (booking) =>
-      ACTIVE_STATUSES.includes(booking.status) &&
-      (booking.bookingDate > today || (booking.bookingDate === today && booking.endTime > currentTime))
-  ).length;
+  const occupancyStats = ownerAnalytics.occupancyStats ?? {};
   const revenueByListing = ownerAnalytics.revenueByListing ?? [];
   const estimatedRevenue = ownerAnalytics.totalRevenue ?? 0;
 
   return {
-    occupiedSlotsNow,
-    availableSlotsNow,
-    upcomingReservations,
+    occupiedSlotsNow: occupancyStats.activeOccupiedSlots ?? 0,
+    availableSlotsNow: occupancyStats.availableSlots ?? 0,
+    upcomingReservations: occupancyStats.upcomingReservations ?? 0,
+    upcomingReservedSlots: occupancyStats.upcomingReservedSlots ?? 0,
+    reservedSlots: occupancyStats.reservedSlots ?? 0,
     estimatedRevenue,
     bookingCounts: {
       total: bookings.length,

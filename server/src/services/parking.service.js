@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js';
 import { Parking } from '../models/parking.model.js';
 import { Review } from '../models/review.model.js';
-import { computeLiveAvailableSlotsForMany, reconcileExpiredBookings } from './booking.service.js';
+import { reconcileExpiredBookings } from './booking.service.js';
+import { calculateOccupancyMetricsForMany } from './occupancy.service.js';
 import { getOccupiedSlots } from './slot.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
@@ -254,17 +255,24 @@ export async function listPublicParkings(query, deps = {}) {
   ]);
   const rankedParkings = applyRanking(parkings, query);
 
-  // Inject live available slot counts so list results reflect current occupancy
-  const liveSlots = await computeLiveAvailableSlotsForMany(
+  // Inject live occupancy metrics using centralized occupancy service
+  const occupancyMetrics = await calculateOccupancyMetricsForMany(
     rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
     deps
   );
 
   const serializedParkings = rankedParkings.map((p) => {
-      const serialized = serializeParking(p);
-      const live = liveSlots.get(p._id.toString());
-      return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
-    });
+    const serialized = serializeParking(p);
+    const metrics = occupancyMetrics.get(p._id.toString());
+    return metrics !== undefined
+      ? {
+          ...serialized,
+          availableSlots: metrics.availableSlots,
+          occupiedSlots: metrics.occupiedSlots,
+          utilization: metrics.utilization
+        }
+      : serialized;
+  });
 
   const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
 
@@ -313,17 +321,24 @@ export async function listNearbyParkings(query, deps = {}) {
   const total = result?.metadata?.[0]?.total ?? 0;
   const rankedParkings = applyRanking(parkings, { ...query, sort: query.sort ?? 'nearest' });
 
-  // Inject live available slot counts
-  const liveSlots = await computeLiveAvailableSlotsForMany(
+  // Inject live occupancy metrics using centralized occupancy service
+  const occupancyMetrics = await calculateOccupancyMetricsForMany(
     rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
     deps
   );
 
   const serializedParkings = rankedParkings.map((p) => {
-      const serialized = serializeParking(p);
-      const live = liveSlots.get(p._id.toString());
-      return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
-    });
+    const serialized = serializeParking(p);
+    const metrics = occupancyMetrics.get(p._id.toString());
+    return metrics !== undefined
+      ? {
+          ...serialized,
+          availableSlots: metrics.availableSlots,
+          occupiedSlots: metrics.occupiedSlots,
+          utilization: metrics.utilization
+        }
+      : serialized;
+  });
 
   const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
 
@@ -342,16 +357,23 @@ export async function listOwnerParkings(user, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
   const parkings = await ParkingModel.find({ owner: user._id }).sort({ createdAt: -1 }).lean();
 
-  // Inject live available slot counts so the owner sees current occupancy
-  const liveSlots = await computeLiveAvailableSlotsForMany(
+  // Inject live occupancy metrics using centralized occupancy service
+  const occupancyMetrics = await calculateOccupancyMetricsForMany(
     parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
     deps
   );
 
   return parkings.map((p) => {
     const serialized = serializeParking(p);
-    const live = liveSlots.get(p._id.toString());
-    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+    const metrics = occupancyMetrics.get(p._id.toString());
+    return metrics !== undefined
+      ? {
+          ...serialized,
+          availableSlots: metrics.availableSlots,
+          occupiedSlots: metrics.occupiedSlots,
+          utilization: metrics.utilization
+        }
+      : serialized;
   });
 }
 

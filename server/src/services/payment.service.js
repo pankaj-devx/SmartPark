@@ -5,17 +5,16 @@ import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createNotification } from './notification.service.js';
 import {
-  buildBookingOverlapFilter,
   calculateTotalAmount,
   createConfirmedBooking,
   isFutureBooking,
   serializeBooking
 } from './booking.service.js';
+import { calculateOccupiedSlots } from './occupancy.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 import {
   formatValidationErrors,
-  validatePaymentBookingInput,
-  validateSlotAvailability
+  validatePaymentBookingInput
 } from '../utils/bookingValidation.js';
 
 export async function createOrder(amount, options = {}) {
@@ -344,27 +343,31 @@ async function validatePaymentBookingRequest(BookingModel, ParkingModel, booking
     throw createHttpError(409, 'Vehicle type is not supported by this parking listing');
   }
 
-  const occupiedSlots = await countPaidOverlappingSlots(BookingModel, bookingInput);
-  const slotValidation = validateSlotAvailability(
-    bookingInput.slotCount,
-    parking.totalSlots,
-    occupiedSlots
+  const occupiedSlots = await calculateOccupiedSlots(
+    parking._id,
+    {
+      bookingDate: bookingInput.bookingDate,
+      startTime: bookingInput.startTime,
+      endTime: bookingInput.endTime
+    },
+    { BookingModel }
   );
 
-  if (!slotValidation.valid) {
-    throw createHttpError(409, slotValidation.error);
+  const availableSlots = Math.max(0, parking.totalSlots - occupiedSlots);
+
+  if (bookingInput.slotCount < 1) {
+    throw createHttpError(400, 'At least one slot must be requested');
+  }
+
+  if (bookingInput.slotCount > availableSlots) {
+    const error =
+      availableSlots === 0
+        ? 'No slots available for selected time'
+        : `Only ${availableSlots} slot(s) available for selected time`;
+    throw createHttpError(409, error);
   }
 
   return parking;
-}
-
-async function countPaidOverlappingSlots(BookingModel, bookingInput) {
-  const aggregate = BookingModel.aggregate([
-    { $match: buildBookingOverlapFilter(bookingInput) },
-    { $group: { _id: null, slotCount: { $sum: '$slotCount' } } }
-  ]);
-  const result = await aggregate;
-  return result[0]?.slotCount ?? 0;
 }
 
 function buildOrderNotes(bookingInput, user, totalAmount) {

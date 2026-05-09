@@ -29,7 +29,7 @@ test('buildBookingOverlapFilter uses time-window conflict logic', () => {
 
   assert.equal(filter.parking, parkingId);
   assert.equal(filter.bookingDate, '2026-05-01');
-  assert.deepEqual(filter.status, { $in: ['pending', 'confirmed'] });
+  assert.deepEqual(filter.status, { $in: ['confirmed', 'active', 'ongoing'] });
   assert.deepEqual(filter.startTime, { $lt: '11:00' });
   assert.deepEqual(filter.endTime, { $gt: '09:00' });
 });

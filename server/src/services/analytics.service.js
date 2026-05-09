@@ -1,8 +1,12 @@
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
+import {
+  calculateOccupancyMetricsForMany
+} from './occupancy.service.js';
 
 const REVENUE_BOOKING_STATUSES = ['confirmed', 'completed'];
+const KOLKATA_OFFSET_MINUTES = 330;
 
 /**
  * Driver analytics — personal usage summary for a given user.
@@ -14,6 +18,13 @@ export async function getDriverAnalytics(userId) {
 
     Booking.aggregate([
       { $match: { user: userId } },
+      {
+        $match: {
+          paymentStatus: 'paid',
+          bookingStatus: { $ne: 'cancelled' },
+          status: { $in: REVENUE_BOOKING_STATUSES }
+        }
+      },
       { $group: { _id: null, totalSpent: { $sum: '$totalAmount' } } }
     ]),
 
@@ -135,7 +146,13 @@ export async function calculateOwnerAnalytics(ownerId, deps = {}) {
       occupancyStats: {
         totalSlots: 0,
         availableSlots: 0,
-        occupiedSlots: 0
+        occupiedSlots: 0,
+        activeOccupiedSlots: 0,
+        upcomingReservedSlots: 0,
+        reservedSlots: 0,
+        upcomingReservations: 0,
+        reservedAvailableSlots: 0,
+        occupancyByListing: []
       },
       bookingTrend: []
     };
@@ -212,26 +229,67 @@ export async function calculateOwnerAnalytics(ownerId, deps = {}) {
     };
   });
 
+  // Use centralized occupancy service for accurate metrics
+  const occupancyMetricsMap = await calculateOccupancyMetricsForMany(
+    ownerParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
+    { BookingModel, now: deps.now }
+  );
+
+  // Build occupancy by listing
+  const occupancyByListing = ownerParkings.map((parking) => {
+    const metrics = occupancyMetricsMap.get(parking._id.toString()) ?? {
+      totalSlots: parking.totalSlots,
+      occupiedSlots: 0,
+      availableSlots: parking.totalSlots,
+      utilization: 0,
+      upcomingReservations: 0,
+      upcomingReservedSlots: 0
+    };
+
+    return {
+      parking: parking._id.toString(),
+      activeOccupiedSlots: metrics.occupiedSlots,
+      upcomingReservedSlots: metrics.upcomingReservedSlots,
+      reservedSlots: metrics.occupiedSlots + metrics.upcomingReservedSlots,
+      upcomingReservations: metrics.upcomingReservations
+    };
+  });
+
+  // Aggregate totals
   const totalSlots = ownerParkings.reduce((sum, parking) => sum + (parking.totalSlots ?? 0), 0);
-  const availableSlots = ownerParkings.reduce((sum, parking) => sum + (parking.availableSlots ?? 0), 0);
+  const activeOccupiedSlots = occupancyByListing.reduce((sum, item) => sum + item.activeOccupiedSlots, 0);
+  const upcomingReservedSlots = occupancyByListing.reduce((sum, item) => sum + item.upcomingReservedSlots, 0);
+  const reservedSlots = occupancyByListing.reduce((sum, item) => sum + item.reservedSlots, 0);
+  const upcomingReservations = occupancyByListing.reduce((sum, item) => sum + item.upcomingReservations, 0);
+
+  const occupancyStats = {
+    totalSlots,
+    activeOccupiedSlots,
+    upcomingReservedSlots,
+    reservedSlots,
+    upcomingReservations,
+    occupiedSlots: activeOccupiedSlots,
+    availableSlots: Math.max(0, totalSlots - activeOccupiedSlots),
+    reservedAvailableSlots: Math.max(0, totalSlots - reservedSlots),
+    occupancyByListing
+  };
 
   return {
     parkingIds,
     totalBookings: summary[0]?.totalBookings ?? 0,
     totalRevenue: summary[0]?.totalRevenue ?? 0,
     revenueByListing,
-    occupancyStats: {
-      totalSlots,
-      availableSlots,
-      occupiedSlots: Math.max(0, totalSlots - availableSlots)
-    },
+    occupancyStats,
     bookingTrend
   };
 }
 
 async function findOwnerParkingsForAnalytics(ParkingModel, ownerId) {
   const query = ParkingModel.find({ owner: ownerId });
+  return findLean(query);
+}
 
+async function findLean(query) {
   if (typeof query.lean === 'function') {
     return query.lean();
   }
