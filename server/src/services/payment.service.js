@@ -409,31 +409,42 @@ function logPaymentVerification(input) {
 
 async function notifyBookingConfirmed(booking, deps = {}) {
   const ParkingModel = deps.ParkingModel ?? Parking;
+  const UserModel = deps.UserModel ?? (await import('../models/user.model.js')).User;
   const notify = deps.createNotification ?? createNotification;
-  const parking = await ParkingModel.findById(booking.parking).select('owner title').lean();
+  const {
+    formatBookingCreatedNotification,
+    formatOwnerNewBookingNotification,
+    formatAdminNewBookingNotification
+  } = await import('../utils/notificationFormatter.js');
+
+  const parking = await ParkingModel.findById(booking.parking)
+    .populate('owner', 'name')
+    .lean();
 
   if (!parking) {
     return;
   }
 
-  const date = booking.bookingDate;
-  const startTime = booking.startTime;
-  const endTime = booking.endTime;
+  // Get user details for better notifications
+  const user = await UserModel.findById(booking.user).select('name').lean();
+  const customerName = user?.name || 'Customer';
+  const ownerName = parking.owner?.name || 'Owner';
 
-  await Promise.allSettled([
-    notify(
-      booking.user,
-      'driver',
-      'booking_confirmed',
-      `Your booking at ${parking.title} on ${date} from ${startTime} to ${endTime} is confirmed.`
-    ),
-    parking.owner
-      ? notify(
-          parking.owner,
-          'owner',
-          'new_booking',
-          `New booking received for "${parking.title}" on ${date} from ${startTime} to ${endTime}.`
-        )
-      : Promise.resolve()
-  ]);
+  // Notify user (driver) with booking confirmation
+  const userMessage = formatBookingCreatedNotification(booking, parking);
+  await notify(booking.user, 'driver', 'booking_confirmed', userMessage);
+
+  // Notify owner with new booking details
+  if (parking.owner) {
+    const ownerMessage = formatOwnerNewBookingNotification(booking, parking, customerName);
+    await notify(parking.owner._id || parking.owner, 'owner', 'new_booking', ownerMessage);
+  }
+
+  // Notify all admins with platform booking details
+  const admins = await UserModel.find({ role: 'admin' }).select('_id').lean();
+  const adminMessage = formatAdminNewBookingNotification(booking, parking, customerName, ownerName);
+  
+  await Promise.allSettled(
+    admins.map(admin => notify(admin._id, 'admin', 'new_booking', adminMessage))
+  );
 }

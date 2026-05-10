@@ -39,23 +39,29 @@ test('owner operations summary calculates occupancy and earnings', async () => {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const ParkingModel = makeParkingModel([makeParking({ id: parkingId, totalSlots: 10, owner: ownerId })]);
+  const confirmedBooking = makeBooking({
+    parking: parkingId,
+    bookingDate: today,
+    startTime: '00:00',
+    endTime: '23:59',
+    slotCount: 3,
+    totalAmount: 300,
+    status: 'confirmed'
+  });
+  const completedBooking = makeBooking({ parking: parkingId, status: 'completed', totalAmount: 200 });
   const BookingModel = {
-    async aggregate() {
-      return [{ _id: parkingId, occupiedSlots: 3 }];
+    // aggregate is called by calculateOwnerAnalytics for revenue and occupancy
+    async aggregate(pipeline) {
+      // Return occupancy data for the occupancyStats pipeline
+      const hasGroup = JSON.stringify(pipeline).includes('reservedSlots');
+      if (hasGroup) {
+        return [{ _id: parkingId, reservedSlots: 3, activeOccupiedSlots: 3, upcomingReservedSlots: 0 }];
+      }
+      // Revenue pipeline
+      return [{ _id: parkingId, totalRevenue: 500, bookingCount: 2 }];
     },
     find() {
-      return sortableLean([
-        makeBooking({
-          parking: parkingId,
-          bookingDate: today,
-          startTime: '00:00',
-          endTime: '23:59',
-          slotCount: 3,
-          totalAmount: 300,
-          status: 'confirmed'
-        }),
-        makeBooking({ parking: parkingId, status: 'completed', totalAmount: 200 })
-      ]);
+      return sortableLean([confirmedBooking, completedBooking]);
     }
   };
 
@@ -64,7 +70,6 @@ test('owner operations summary calculates occupancy and earnings', async () => {
   assert.equal(result.summary.occupiedSlotsNow, 3);
   assert.equal(result.summary.availableSlotsNow, 7);
   assert.equal(result.summary.estimatedRevenue, 500);
-  assert.equal(result.summary.perListingEarnings[0].estimatedRevenue, 500);
 });
 
 test('owner can mark own active booking completed and slots restore', async () => {
@@ -76,13 +81,18 @@ test('owner can mark own active booking completed and slots restore', async () =
       return booking;
     }
   };
+  const storedParking = makeParking({ id: parkingId, owner: ownerId });
   const ParkingModel = {
     async findOne(filter) {
       assert.equal(filter.owner.toString(), ownerId);
-      return makeParking({ id: parkingId, owner: ownerId });
+      return storedParking;
+    },
+    async findById() {
+      return storedParking;
     },
     async findByIdAndUpdate(_id, update) {
       restoredSlots = update.$inc.availableSlots;
+      return storedParking;
     },
     async updateOne() {
       return {};

@@ -3,8 +3,11 @@ import { deleteParkingImage, uploadParkingImage } from '../config/cloudinary.js'
 import { Parking } from '../models/parking.model.js';
 import { Review } from '../models/review.model.js';
 import { reconcileExpiredBookings } from './booking.service.js';
-import { calculateOccupancyMetricsForMany } from './occupancy.service.js';
-import { getOccupiedSlots } from './slot.service.js';
+import {
+  calculateOccupancyMetricsForMany,
+  calculateOccupiedSlotsForMany,
+  calculateCurrentOccupancy
+} from './occupancy.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 const MAX_PARKING_IMAGES = 5;
@@ -74,7 +77,8 @@ export function serializeParking(parking) {
     },
     totalSlots: parking.totalSlots,
     availableSlots: parking.availableSlots,
-    occupiedSlots: getOccupiedSlots(parking),
+    // Note: occupiedSlots should be injected from dynamic calculation, not derived from stale DB field
+    occupiedSlots: parking.occupiedSlots,
     vehicleTypes: parking.vehicleTypes,
     hourlyPrice: parking.hourlyPrice,
     // pricing is a Mongoose Map — convert to a plain object for JSON serialization.
@@ -189,9 +193,9 @@ export function buildPublicParkingFilter(query) {
     }
   }
 
-  if (query.availableOnly) {
-    filter.availableSlots = { ...(filter.availableSlots ?? {}), $gt: 0 };
-  }
+  // Note: availableOnly filter is applied after dynamic availability calculation
+  // to ensure accuracy. Pre-filtering on the stale parking.availableSlots DB field
+  // would show incorrect results.
 
   if (query.isOpen24x7 !== undefined) {
     filter.isOpen24x7 = query.isOpen24x7;
@@ -208,7 +212,7 @@ export function buildPublicParkingFilter(query) {
     ];
   }
 
-  applyAvailabilityPlaceholders(filter, query);
+  // Time-range availability is computed dynamically after the query — no pre-filter needed.
 
   return filter;
 }
@@ -219,7 +223,9 @@ export function buildParkingSort(sort) {
     price_asc: { hourlyPrice: 1 },
     price_desc: { hourlyPrice: -1 },
     cheapest: { hourlyPrice: 1 },
-    highest_availability: { availableSlots: -1 },
+    // Note: highest_availability sort removed - availability is computed dynamically
+    // after the query, so DB-level sorting on stale field would be incorrect.
+    // Clients should use relevance sort and filter by availableOnly if needed.
     relevance: { createdAt: -1 },
     nearest: { createdAt: -1 }
   };
@@ -255,29 +261,61 @@ export async function listPublicParkings(query, deps = {}) {
   ]);
   const rankedParkings = applyRanking(parkings, query);
 
-  // Inject live occupancy metrics using centralized occupancy service
-  const occupancyMetrics = await calculateOccupancyMetricsForMany(
-    rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
-    deps
-  );
+  // Inject availability — time-range-aware when date+time filters are present,
+  // otherwise fall back to current-occupancy metrics.
+  const parkingRefs = rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots }));
+  let serializedParkings;
 
-  const serializedParkings = rankedParkings.map((p) => {
-    const serialized = serializeParking(p);
-    const metrics = occupancyMetrics.get(p._id.toString());
-    return metrics !== undefined
-      ? {
-          ...serialized,
-          availableSlots: metrics.availableSlots,
-          occupiedSlots: metrics.occupiedSlots,
-          utilization: metrics.utilization
-        }
-      : serialized;
-  });
+  if (query.date && query.startTime && query.endTime) {
+    // Time-range query: availability = totalSlots - overlapping confirmed bookings
+    const occupiedMap = await calculateOccupiedSlotsForMany(
+      parkingRefs,
+      { bookingDate: query.date, startTime: query.startTime, endTime: query.endTime },
+      deps
+    );
+    serializedParkings = rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const occupied = occupiedMap.get(p._id.toString()) ?? 0;
+      return {
+        ...serialized,
+        availableSlots: Math.max(0, p.totalSlots - occupied),
+        occupiedSlots: occupied
+      };
+    });
+  } else {
+    // No time range: use current occupancy (slots occupied right now)
+    const occupancyMetrics = await calculateOccupancyMetricsForMany(parkingRefs, deps);
+    serializedParkings = rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const metrics = occupancyMetrics.get(p._id.toString());
+      return metrics !== undefined
+        ? {
+            ...serialized,
+            availableSlots: metrics.availableSlots,
+            occupiedSlots: metrics.occupiedSlots,
+            utilization: metrics.utilization
+          }
+        : serialized;
+    });
+  }
 
   const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
+  let smartParkings = applySmartRecommendations(reviewedParkings);
+
+  // Apply highest_availability sort after dynamic availability is injected
+  if (query.sort === 'highest_availability') {
+    smartParkings = smartParkings.sort((a, b) => 
+      (b.availableSlots ?? 0) - (a.availableSlots ?? 0) || (b.rankingScore ?? 0) - (a.rankingScore ?? 0)
+    );
+  }
+
+  // Apply availableOnly filter after dynamic availability calculation
+  const filteredParkings = query.availableOnly
+    ? smartParkings.filter((p) => (p.availableSlots ?? 0) > 0)
+    : smartParkings;
 
   return {
-    parkings: applySmartRecommendations(reviewedParkings),
+    parkings: filteredParkings,
     pagination: {
       page,
       limit,
@@ -321,29 +359,61 @@ export async function listNearbyParkings(query, deps = {}) {
   const total = result?.metadata?.[0]?.total ?? 0;
   const rankedParkings = applyRanking(parkings, { ...query, sort: query.sort ?? 'nearest' });
 
-  // Inject live occupancy metrics using centralized occupancy service
-  const occupancyMetrics = await calculateOccupancyMetricsForMany(
-    rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
-    deps
-  );
+  // Inject availability — time-range-aware when date+time filters are present,
+  // otherwise fall back to current-occupancy metrics.
+  const parkingRefs = rankedParkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots }));
+  let serializedParkings;
 
-  const serializedParkings = rankedParkings.map((p) => {
-    const serialized = serializeParking(p);
-    const metrics = occupancyMetrics.get(p._id.toString());
-    return metrics !== undefined
-      ? {
-          ...serialized,
-          availableSlots: metrics.availableSlots,
-          occupiedSlots: metrics.occupiedSlots,
-          utilization: metrics.utilization
-        }
-      : serialized;
-  });
+  if (query.date && query.startTime && query.endTime) {
+    // Time-range query: availability = totalSlots - overlapping confirmed bookings
+    const occupiedMap = await calculateOccupiedSlotsForMany(
+      parkingRefs,
+      { bookingDate: query.date, startTime: query.startTime, endTime: query.endTime },
+      deps
+    );
+    serializedParkings = rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const occupied = occupiedMap.get(p._id.toString()) ?? 0;
+      return {
+        ...serialized,
+        availableSlots: Math.max(0, p.totalSlots - occupied),
+        occupiedSlots: occupied
+      };
+    });
+  } else {
+    // No time range: use current occupancy (slots occupied right now)
+    const occupancyMetrics = await calculateOccupancyMetricsForMany(parkingRefs, deps);
+    serializedParkings = rankedParkings.map((p) => {
+      const serialized = serializeParking(p);
+      const metrics = occupancyMetrics.get(p._id.toString());
+      return metrics !== undefined
+        ? {
+            ...serialized,
+            availableSlots: metrics.availableSlots,
+            occupiedSlots: metrics.occupiedSlots,
+            utilization: metrics.utilization
+          }
+        : serialized;
+    });
+  }
 
   const reviewedParkings = await enrichParkingsWithReviewStats(serializedParkings, deps);
+  let smartParkings = applySmartRecommendations(reviewedParkings);
+
+  // Apply highest_availability sort after dynamic availability is injected
+  if (query.sort === 'highest_availability') {
+    smartParkings = smartParkings.sort((a, b) => 
+      (b.availableSlots ?? 0) - (a.availableSlots ?? 0) || (b.rankingScore ?? 0) - (a.rankingScore ?? 0)
+    );
+  }
+
+  // Apply availableOnly filter after dynamic availability calculation
+  const filteredParkings = query.availableOnly
+    ? smartParkings.filter((p) => (p.availableSlots ?? 0) > 0)
+    : smartParkings;
 
   return {
-    parkings: applySmartRecommendations(reviewedParkings),
+    parkings: filteredParkings,
     pagination: {
       page,
       limit,
@@ -382,19 +452,34 @@ export async function getParkingDetail(id, user = null, deps = {}) {
   const parking = await findParkingById(ParkingModel, id);
 
   if (parking.verificationStatus === 'approved' && parking.isActive) {
-    // Reconcile any expired bookings so availableSlots is accurate before
-    // returning. This is the most important read path — it's what the
-    // booking form and parking detail page use.
+    // Reconcile expired bookings (marks them completed — data hygiene).
     await reconcileExpiredBookings(parking._id, deps);
-    // Re-fetch after reconciliation so the updated availableSlots is returned
+    // Re-fetch, then inject RESERVED CAPACITY (all confirmed bookings)
+    // so the displayed availableSlots reflects true reservation state.
     const refreshed = await ParkingModel.findById(parking._id).lean();
-    return serializeParking(refreshed ?? parking);
+    const base = serializeParking(refreshed ?? parking);
+    const { calculateReservedSlots } = await import('./occupancy.service.js');
+    const reservedSlots = await calculateReservedSlots(parking._id, deps);
+    return {
+      ...base,
+      reservedSlots,
+      availableSlots: Math.max(0, base.totalSlots - reservedSlots),
+      occupiedSlots: reservedSlots  // For UI consistency
+    };
   }
 
   if (user && canManageParking(user, parking)) {
     await reconcileExpiredBookings(parking._id, deps);
     const refreshed = await ParkingModel.findById(parking._id).lean();
-    return serializeParking(refreshed ?? parking);
+    const base = serializeParking(refreshed ?? parking);
+    const { calculateReservedSlots } = await import('./occupancy.service.js');
+    const reservedSlots = await calculateReservedSlots(parking._id, deps);
+    return {
+      ...base,
+      reservedSlots,
+      availableSlots: Math.max(0, base.totalSlots - reservedSlots),
+      occupiedSlots: reservedSlots
+    };
   }
 
   throw createHttpError(404, 'Parking listing not found');
@@ -620,14 +705,10 @@ function getPaginationSkip(page, limit) {
   return Math.min((page - 1) * limit, MAX_PAGINATION_SKIP);
 }
 
-function applyAvailabilityPlaceholders(filter, query) {
-  if (!query.date && !query.startTime && !query.endTime) {
-    return filter;
-  }
-
-  filter.availableSlots = { ...(filter.availableSlots ?? {}), $gt: 0 };
-  return filter;
-}
+// applyAvailabilityPlaceholders removed — it filtered on the stale
+// parking.availableSlots DB field when date/time params were present.
+// Availability for a time range is now computed dynamically from booking
+// overlap counts and injected after the DB query.
 
 function serializeParkingImage(image) {
   return {
@@ -702,7 +783,9 @@ function applyRanking(parkings, query = {}) {
   }
 
   if (query.sort === 'highest_availability') {
-    return scoredParkings.sort((a, b) => b.availableSlots - a.availableSlots || b.rankingScore - a.rankingScore);
+    // Note: This sort will be applied after dynamic availability is injected.
+    // At this stage, we just preserve the order and let the caller sort by availableSlots.
+    return scoredParkings;
   }
 
   if (query.sort === 'relevance') {

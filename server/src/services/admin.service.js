@@ -2,9 +2,8 @@ import mongoose from 'mongoose';
 import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { User } from '../models/user.model.js';
-import { computeLiveAvailableSlotsForMany } from './booking.service.js';
+import { calculateOccupancyMetricsForMany } from './occupancy.service.js';
 import { serializeParking, approveParking, rejectParking, toggleParkingActive } from './parking.service.js';
-import { getOccupiedSlots, increaseAvailableSlots } from './slot.service.js';
 import { createHttpError } from '../utils/createHttpError.js';
 
 export async function getAdminDashboard(deps = {}) {
@@ -53,7 +52,6 @@ export async function listAdminParkings(deps = {}) {
 
   const listings = serializedParkings.map((parking) => ({
     ...parking,
-    occupiedSlots: getOccupiedSlots(parking),
     bookingCount: bookingCounts.get(parking.id) ?? 0,
     parkingStatus: getParkingStatus(parking)
   }));
@@ -111,15 +109,23 @@ export async function listAdminBookings(query = {}, deps = {}) {
  * accurate slot data across all listings.
  */
 async function serializeParkingsWithLiveSlots(parkings, deps = {}) {
-  const liveSlots = await computeLiveAvailableSlotsForMany(
+  // Use dynamic occupancy (live confirmed booking counts) instead of the stale
+  // parking.availableSlots DB field so admin sees consistent data across all views.
+  const occupancyMetrics = await calculateOccupancyMetricsForMany(
     parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
     deps
   );
 
   return parkings.map((p) => {
     const serialized = serializeParking(p);
-    const live = liveSlots.get(p._id.toString());
-    return live !== undefined ? { ...serialized, availableSlots: live } : serialized;
+    const metrics = occupancyMetrics.get(p._id.toString());
+    return metrics !== undefined
+      ? {
+          ...serialized,
+          availableSlots: metrics.availableSlots,
+          occupiedSlots: metrics.occupiedSlots
+        }
+      : serialized;
   });
 }
 
@@ -274,13 +280,41 @@ export async function cancelAdminBooking(id, deps = {}) {
     }
 
     if (booking.status !== 'cancelled') {
-      await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
       booking.status = 'cancelled';
       booking.cancelledBy = 'admin';
       await booking.save({ session });
+      // Note: Availability is computed dynamically from live booking data.
+      // Cancelled bookings are automatically excluded from occupancy calculations.
     }
 
-    console.log('Booking Cancelled');
+    console.log('Booking Cancelled by Admin');
+    
+    // Recalculate RESERVED SLOTS after admin cancellation to emit accurate counts
+    const parking = await ParkingModel.findById(booking.parking).session(session);
+    if (parking) {
+      const { calculateReservedSlots } = await import('./occupancy.service.js');
+      const { getIO } = await import('../config/socket.js');
+      const reservedSlots = await calculateReservedSlots(parking._id, { BookingModel });
+      
+      // Emit real-time event to notify admin dashboard and owner about slot update
+      const io = getIO();
+      if (io) {
+        const eventData = {
+          parkingId: parking._id.toString(),
+          action: 'cancelled',
+          bookingId: booking._id.toString(),
+          totalSlots: parking.totalSlots,
+          reservedSlots,
+          occupiedSlots: reservedSlots,  // For UI consistency
+          availableSlots: Math.max(0, parking.totalSlots - reservedSlots)
+        };
+        console.log('[AdminService] Emitting parking_slots_updated event (admin cancellation):', eventData);
+        io.emit('parking_slots_updated', eventData);
+      } else {
+        console.warn('[AdminService] Socket.IO not available, cannot emit parking_slots_updated event');
+      }
+    }
+    
     return serializeAdminBooking(booking);
   });
 }

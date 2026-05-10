@@ -6,6 +6,7 @@ import { ProfilePage } from '../../pages/ProfilePage.jsx';
 import { completeOwnerBooking, fetchOwnerBookings } from '../owner/ownerApi.js';
 import { createParking, deleteParking, updateParking, uploadParkingImages } from './parkingApi.js';
 import { ParkingForm } from './ParkingForm.jsx';
+import { getSocket } from '../../services/socket.js';
 
 const OWNER_CACHE_KEY = 'smartpark_owner_dashboard_cache';
 const statusStyles = {
@@ -55,6 +56,28 @@ export function OwnerParkingDashboard({ activeSection = 'dashboard' }) {
 
   useEffect(() => {
     Promise.resolve().then(loadMine);
+    
+    // Listen for real-time parking slot updates
+    const socket = getSocket();
+    console.log('[OwnerDashboard] Socket connection status:', socket?.connected);
+    
+    if (socket) {
+      const handleSlotUpdate = (data) => {
+        console.log('[OwnerDashboard] Received parking_slots_updated event:', data);
+        // Refresh dashboard data to show updated slot counts
+        loadMine();
+      };
+      
+      socket.on('parking_slots_updated', handleSlotUpdate);
+      console.log('[OwnerDashboard] Registered parking_slots_updated listener');
+      
+      return () => {
+        console.log('[OwnerDashboard] Cleaning up parking_slots_updated listener');
+        socket.off('parking_slots_updated', handleSlotUpdate);
+      };
+    } else {
+      console.warn('[OwnerDashboard] Socket not available, real-time updates disabled');
+    }
   }, [loadMine]);
 
   // When arriving from the detail page via ?edit=<id>, pre-select that parking
@@ -208,10 +231,10 @@ function OwnerOverview({ ownerSummary, parkings, topListing }) {
   return (
     <div className="grid gap-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Occupied now" value={ownerSummary?.occupiedSlotsNow ?? 0} />
-        <SummaryCard label="Available now" value={ownerSummary?.availableSlotsNow ?? 0} />
-        <SummaryCard label="Upcoming reservations" value={ownerSummary?.upcomingReservations ?? 0} />
-        <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary?.estimatedRevenue ?? 0}`} />
+        <SummaryCard label="Reserved slots" value={ownerSummary?.occupiedSlotsNow ?? 0} tooltip="Total slots reserved by confirmed bookings (current + future)" />
+        <SummaryCard label="Available slots" value={ownerSummary?.availableSlotsNow ?? 0} tooltip="Slots not reserved by any booking" />
+        <SummaryCard label="Upcoming reservations" value={ownerSummary?.upcomingReservations ?? 0} tooltip="Confirmed bookings starting in the future" />
+        <SummaryCard label="Estimated revenue" value={`Rs ${ownerSummary?.estimatedRevenue ?? 0}`} tooltip="Total revenue from confirmed and completed bookings" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
@@ -379,9 +402,9 @@ function OwnerOccupancy({ isLoading, occupancyCards, ownerSummary }) {
   return (
     <div className="grid gap-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <SummaryCard label="Currently occupied" value={ownerSummary?.occupiedSlotsNow ?? 0} />
-        <SummaryCard label="Currently available" value={ownerSummary?.availableSlotsNow ?? 0} />
-        <SummaryCard label="Upcoming reservation load" value={ownerSummary?.upcomingReservations ?? 0} />
+        <SummaryCard label="Reserved slots" value={ownerSummary?.occupiedSlotsNow ?? 0} tooltip="Total slots reserved by confirmed bookings" />
+        <SummaryCard label="Available slots" value={ownerSummary?.availableSlotsNow ?? 0} tooltip="Slots not reserved by any booking" />
+        <SummaryCard label="Upcoming reservation load" value={ownerSummary?.upcomingReservations ?? 0} tooltip="Confirmed bookings starting in the future" />
       </div>
       <Panel title="Occupancy by listing" subtitle="Spot strain, unused capacity, and uneven utilization before it turns into missed revenue.">
         {isLoading ? <SkeletonGrid /> : null}
@@ -454,12 +477,15 @@ function Panel({ children, subtitle, title }) {
   );
 }
 
-function SummaryCard({ label, value }) {
+function SummaryCard({ label, value, tooltip }) {
   return (
-    <div className="app-stat">
+    <div className="app-stat" title={tooltip}>
       <BarChart3 className="mb-3 h-5 w-5 text-brand-600" aria-hidden="true" />
       <p className="app-copy-soft text-sm">{label}</p>
       <p className="app-heading mt-2 text-2xl font-bold">{value}</p>
+      {tooltip ? (
+        <p className="mt-1 text-xs text-slate-500">{tooltip}</p>
+      ) : null}
     </div>
   );
 }

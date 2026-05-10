@@ -3,10 +3,9 @@ import { Booking } from '../models/booking.model.js';
 import { Parking } from '../models/parking.model.js';
 import { createHttpError } from '../utils/createHttpError.js';
 import { serializeBooking } from './booking.service.js';
-import { computeLiveAvailableSlotsForMany } from './booking.service.js';
 import { calculateOwnerAnalytics } from './analytics.service.js';
 import { serializeParking } from './parking.service.js';
-import { increaseAvailableSlots } from './slot.service.js';
+import { getIO } from '../config/socket.js';
 
 export async function getOwnerBookings(user, query = {}, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
@@ -45,22 +44,18 @@ export async function getOwnerBookings(user, query = {}, deps = {}) {
 
   const serializedBookings = bookings.map(serializeOwnerBooking);
 
-  // Inject live available slot counts into owner parkings
-  const liveSlots = await computeLiveAvailableSlotsForMany(
-    parkings.map((p) => ({ id: p._id, totalSlots: p.totalSlots })),
-    deps
-  );
+  // Build occupancy map from analytics (derived from live confirmed bookings —
+  // active now + upcoming reservations). This is the single source of truth
+  // for slot display in the owner dashboard.
   const occupancyByListing = new Map(
     (ownerAnalytics.occupancyStats?.occupancyByListing ?? []).map((item) => [item.parking, item])
   );
   const serializedParkings = parkings.map((p) => {
     const serialized = serializeParking(p);
-    const live = liveSlots.get(p._id.toString());
     const occupancy = occupancyByListing.get(p._id.toString());
 
     return {
       ...serialized,
-      ...(live !== undefined ? { availableSlots: live } : {}),
       ...(occupancy
         ? {
             availableSlots: Math.max(0, serialized.totalSlots - occupancy.reservedSlots),
@@ -96,11 +91,60 @@ export async function completeOwnerBooking(id, user, deps = {}) {
       return serializeBooking(booking);
     }
 
-    await increaseAvailableSlots(booking.parking, booking.slotCount, { ParkingModel, session });
     booking.status = 'completed';
     await booking.save({ session });
+    // Note: Availability is computed dynamically from live booking data.
+    // Completed bookings are automatically excluded from occupancy calculations.
 
     console.log('Booking Completed');
+    
+    // Recalculate RESERVED SLOTS after completion to emit accurate counts
+    const parking = await ParkingModel.findById(booking.parking).populate('owner', 'name').session(session);
+    if (parking) {
+      const { calculateReservedSlots } = await import('./occupancy.service.js');
+      const reservedSlots = await calculateReservedSlots(parking._id, { BookingModel });
+      
+      // Emit real-time event to notify parking owner and admins about slot update
+      const io = getIO();
+      if (io) {
+        const eventData = {
+          parkingId: parking._id.toString(),
+          action: 'completed',
+          bookingId: booking._id.toString(),
+          totalSlots: parking.totalSlots,
+          reservedSlots,
+          occupiedSlots: reservedSlots,  // For UI consistency
+          availableSlots: Math.max(0, parking.totalSlots - reservedSlots)
+        };
+        console.log('[OwnerService] Emitting parking_slots_updated event (completion):', eventData);
+        io.emit('parking_slots_updated', eventData);
+      } else {
+        console.warn('[OwnerService] Socket.IO not available, cannot emit parking_slots_updated event');
+      }
+
+      // Send completion notification to user (fire-and-forget)
+      Promise.resolve().then(async () => {
+        try {
+          const { createNotification } = await import('./notification.service.js');
+          const { formatBookingCompletedNotification } = await import('../utils/notificationFormatter.js');
+          
+          const notificationMessage = formatBookingCompletedNotification(booking, parking);
+          
+          await createNotification(
+            booking.user,
+            'driver',
+            'booking_completed',
+            notificationMessage,
+            deps
+          );
+          console.log('[OwnerService] Completion notification sent to user:', booking.user);
+        } catch (notificationError) {
+          console.error('[OwnerService] Failed to send completion notification:', notificationError);
+          // Don't throw - notifications are non-critical
+        }
+      });
+    }
+    
     return serializeBooking(booking);
   });
 }
@@ -210,8 +254,8 @@ function buildOwnerSummary(bookings, parkings, ownerAnalytics = {}) {
   const estimatedRevenue = ownerAnalytics.totalRevenue ?? 0;
 
   return {
-    occupiedSlotsNow: occupancyStats.activeOccupiedSlots ?? 0,
-    availableSlotsNow: occupancyStats.availableSlots ?? 0,
+    occupiedSlotsNow: occupancyStats.occupiedSlotsNow ?? occupancyStats.reservedSlots ?? 0,  // Use correct field
+    availableSlotsNow: occupancyStats.availableSlotsNow ?? 0,  // Use correct field
     upcomingReservations: occupancyStats.upcomingReservations ?? 0,
     upcomingReservedSlots: occupancyStats.upcomingReservedSlots ?? 0,
     reservedSlots: occupancyStats.reservedSlots ?? 0,
@@ -220,7 +264,8 @@ function buildOwnerSummary(bookings, parkings, ownerAnalytics = {}) {
       total: bookings.length,
       confirmed: bookings.filter((booking) => booking.status === 'confirmed').length,
       cancelled: bookings.filter((booking) => booking.status === 'cancelled').length,
-      completed: bookings.filter((booking) => booking.status === 'completed').length
+      completed: bookings.filter((booking) => booking.status === 'completed').length,
+      pending: bookings.filter((booking) => booking.status === 'pending').length
     },
     perListingEarnings: revenueByListing
   };

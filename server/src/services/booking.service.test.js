@@ -15,10 +15,12 @@ const otherUserId = '507f1f77bcf86cd799439022';
 const parkingId = '507f1f77bcf86cd799439023';
 const bookingId = '507f1f77bcf86cd799439024';
 
+const tomorrow = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 const bookingInput = {
   parking: parkingId,
   vehicleType: '4-wheeler',
-  bookingDate: '2026-05-01',
+  bookingDate: tomorrow,
   startTime: '09:00',
   endTime: '11:00',
   slotCount: 2
@@ -107,9 +109,8 @@ test('overlapping booking is rejected when requested slots exceed capacity', asy
   );
 });
 
-test('cancellation restores parking slots', async () => {
+test('cancellation marks booking cancelled without updating slot field', async () => {
   const booking = makeBooking({ ...bookingInput, user: userId, status: 'confirmed', slotCount: 2 });
-  let restoredSlots = 0;
 
   const BookingModel = {
     findById() {
@@ -117,11 +118,7 @@ test('cancellation restores parking slots', async () => {
     }
   };
 
-  const ParkingModel = {
-    async findByIdAndUpdate(_id, update) {
-      restoredSlots = update.$inc.availableSlots;
-    }
-  };
+  const ParkingModel = {};
 
   const cancelled = await cancelBooking(bookingId, makeUser(userId), {
     BookingModel,
@@ -129,8 +126,9 @@ test('cancellation restores parking slots', async () => {
     runInTransaction: (work) => work(null)
   });
 
+  // With dynamic availability, slot count is computed from live bookings.
+  // Cancellation marks the booking cancelled (excluded from all occupancy queries) — no field update needed.
   assert.equal(cancelled.status, 'cancelled');
-  assert.equal(restoredSlots, 2);
 });
 
 test('unauthorized users cannot access another user booking', async () => {

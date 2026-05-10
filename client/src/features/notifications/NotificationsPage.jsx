@@ -14,15 +14,17 @@ import {
 } from './notificationService.js';
 
 const TYPE_LABELS = {
-  booking_confirmed: 'Booking confirmed',
-  new_booking:       'New booking',
-  booking_cancelled: 'Booking cancelled'
+  booking_confirmed: 'New Booking Confirmed',
+  new_booking:       'New Reservation Received',
+  booking_cancelled: 'Booking Cancelled',
+  booking_completed: 'Booking Completed'
 };
 
 const TYPE_COLOURS = {
   booking_confirmed: 'bg-green-100 text-green-800',
   new_booking:       'bg-blue-100 text-blue-800',
-  booking_cancelled: 'bg-red-100 text-red-800'
+  booking_cancelled: 'bg-red-100 text-red-800',
+  booking_completed: 'bg-purple-100 text-purple-800'
 };
 
 export function NotificationsPage() {

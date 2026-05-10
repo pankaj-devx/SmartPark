@@ -5,8 +5,24 @@ export async function fetchDriverAnalytics() {
   return response.data.data;
 }
 
-export async function fetchOwnerAnalytics() {
-  const response = await apiClient.get('/analytics/owner');
+export async function fetchOwnerAnalytics(filters = {}) {
+  const params = new URLSearchParams();
+  
+  if (filters.dateRange) {
+    params.append('dateRange', filters.dateRange);
+  }
+  if (filters.startDate && filters.endDate) {
+    params.append('startDate', filters.startDate);
+    params.append('endDate', filters.endDate);
+  }
+  if (filters.parkingId) {
+    params.append('parkingId', filters.parkingId);
+  }
+  
+  const queryString = params.toString();
+  const url = queryString ? `/analytics/owner?${queryString}` : '/analytics/owner';
+  
+  const response = await apiClient.get(url);
   return response.data.data;
 }
 

@@ -29,6 +29,7 @@ import {
   toggleAdminParkingActive,
   unblockAdminUser
 } from './adminApi.js';
+import { getSocket } from '../../services/socket.js';
 
 const ADMIN_CACHE_KEY = 'smartpark_admin_dashboard_cache';
 const statusOptions = ['', 'pending', 'confirmed', 'cancelled', 'completed'];
@@ -155,6 +156,28 @@ export function AdminDashboardPage({ activeSection = 'overview' }) {
 
   useEffect(() => {
     Promise.resolve().then(loadDashboard);
+    
+    // Listen for real-time parking slot updates
+    const socket = getSocket();
+    console.log('[AdminDashboard] Socket connection status:', socket?.connected);
+    
+    if (socket) {
+      const handleSlotUpdate = (data) => {
+        console.log('[AdminDashboard] Received parking_slots_updated event:', data);
+        // Refresh dashboard data to show updated slot counts
+        loadDashboard();
+      };
+      
+      socket.on('parking_slots_updated', handleSlotUpdate);
+      console.log('[AdminDashboard] Registered parking_slots_updated listener');
+      
+      return () => {
+        console.log('[AdminDashboard] Cleaning up parking_slots_updated listener');
+        socket.off('parking_slots_updated', handleSlotUpdate);
+      };
+    } else {
+      console.warn('[AdminDashboard] Socket not available, real-time updates disabled');
+    }
   }, [loadDashboard]);
 
   async function applyParkingUpdate(action) {

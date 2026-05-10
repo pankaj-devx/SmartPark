@@ -11,6 +11,7 @@ import { fetchParkingById } from './parkingApi.js';
 import { fetchParkingReviews } from '../reviews/reviewApi.js';
 import { RatingStars } from '../reviews/RatingStars.jsx';
 import { ReviewList } from '../reviews/ReviewList.jsx';
+import { getSocket } from '../../services/socket.js';
 
 export function ParkingDetailPage() {
   const { id } = useParams();
@@ -44,6 +45,35 @@ export function ParkingDetailPage() {
     }
 
     loadParking();
+    
+    // Listen for real-time parking slot updates
+    const socket = getSocket();
+    if (socket) {
+      const handleSlotUpdate = (data) => {
+        console.log('[ParkingDetailPage] Received parking_slots_updated event:', data);
+        if (data.parkingId === id) {
+          // Optimistic update for immediate feedback
+          setParking(prev => prev ? {
+            ...prev,
+            availableSlots: data.availableSlots,
+            occupiedSlots: data.occupiedSlots,
+            totalSlots: data.totalSlots
+          } : prev);
+          console.log('[ParkingDetailPage] Updated parking slots:', {
+            availableSlots: data.availableSlots,
+            occupiedSlots: data.occupiedSlots
+          });
+        }
+      };
+      
+      socket.on('parking_slots_updated', handleSlotUpdate);
+      console.log('[ParkingDetailPage] Registered parking_slots_updated listener for parking:', id);
+      
+      return () => {
+        console.log('[ParkingDetailPage] Cleaning up parking_slots_updated listener');
+        socket.off('parking_slots_updated', handleSlotUpdate);
+      };
+    }
   }, [id]);
 
   useEffect(() => {
@@ -64,9 +94,9 @@ export function ParkingDetailPage() {
     setBookingDraft(null);
     setIsBookingOpen(false);
 
-    // Refetch the parking from the API so availableSlots reflects the server's
-    // authoritative value (which includes reconciliation of any expired bookings)
-    // rather than an optimistic client-side decrement that could drift.
+    // Refetch the parking from the API to get dynamically calculated availability.
+    // The server always computes availableSlots = totalSlots - overlapping bookings,
+    // so we don't need optimistic client-side decrements that could drift.
     try {
       const refreshed = await fetchParkingById(id);
       setParking(refreshed);
@@ -76,12 +106,17 @@ export function ParkingDetailPage() {
       });
     } catch (err) {
       console.error('[ParkingDetailPage] Failed to refresh parking data:', err);
-      // Fallback: apply optimistic decrement if the refetch fails
-      setParking((current) =>
-        current
-          ? { ...current, availableSlots: Math.max(0, current.availableSlots - booking.slotCount) }
-          : current
-      );
+      // On refetch failure, retry after a short delay instead of using stale optimistic logic
+      setTimeout(async () => {
+        try {
+          const retried = await fetchParkingById(id);
+          setParking(retried);
+          console.log('[ParkingDetailPage] Parking data refreshed on retry');
+        } catch (retryErr) {
+          console.error('[ParkingDetailPage] Retry failed, keeping current state');
+          // Keep current state - user can manually refresh if needed
+        }
+      }, 1000);
     }
   }
 

@@ -105,7 +105,9 @@ test('buildPublicParkingFilter composes location and open-now filters', () => {
   assert.deepEqual(filter.$or[1]['operatingHours.close'], { $gte: '10:30' });
 });
 
-test('availability placeholders keep approved visibility and require available slots', () => {
+test('time-range queries do not apply stale availableSlots pre-filter', () => {
+  // Availability for a time range is computed dynamically from booking overlap counts
+  // after the DB query — no pre-filter on the availableSlots DB field is needed.
   const filter = buildPublicParkingFilter({
     date: '2026-05-01',
     startTime: '09:00',
@@ -114,7 +116,7 @@ test('availability placeholders keep approved visibility and require available s
 
   assert.equal(filter.verificationStatus, 'approved');
   assert.equal(filter.isActive, true);
-  assert.deepEqual(filter.availableSlots, { $gt: 0 });
+  assert.equal(filter.availableSlots, undefined); // no stale pre-filter
 });
 
 test('buildParkingSort supports discovery sorting modes', () => {

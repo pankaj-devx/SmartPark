@@ -23,9 +23,10 @@ const POLL_INTERVAL_MS = 30_000;
 
 // Human-readable type labels
 const TYPE_LABELS = {
-  booking_confirmed: 'Booking confirmed',
-  new_booking:       'New booking',
-  booking_cancelled: 'Booking cancelled'
+  booking_confirmed: 'New Booking Confirmed',
+  new_booking:       'New Reservation Received',
+  booking_cancelled: 'Booking Cancelled',
+  booking_completed: 'Booking Completed'
 };
 
 export function NotificationBell() {

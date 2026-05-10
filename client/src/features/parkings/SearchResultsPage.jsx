@@ -10,6 +10,7 @@ import { NearbyMapView } from './NearbyMapView.jsx';
 import { SearchBar } from './SearchBar.jsx';
 import { useAuth } from '../auth/useAuth.js';
 import { AuthModal } from '../auth/AuthModal.jsx';
+import { getSocket } from '../../services/socket.js';
 
 export function SearchResultsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -60,6 +61,34 @@ export function SearchResultsPage() {
 
   useEffect(() => {
     loadParkings(urlFilters);
+    
+    // Listen for real-time parking slot updates
+    const socket = getSocket();
+    if (socket) {
+      const handleSlotUpdate = (data) => {
+        console.log('[SearchResultsPage] Received parking_slots_updated event:', data);
+        // Update the specific parking in the list
+        setParkings(prev => prev.map(p =>
+          p.id === data.parkingId
+            ? {
+                ...p,
+                availableSlots: data.availableSlots,
+                occupiedSlots: data.occupiedSlots,
+                totalSlots: data.totalSlots
+              }
+            : p
+        ));
+        console.log('[SearchResultsPage] Updated parking slots for:', data.parkingId);
+      };
+      
+      socket.on('parking_slots_updated', handleSlotUpdate);
+      console.log('[SearchResultsPage] Registered parking_slots_updated listener');
+      
+      return () => {
+        console.log('[SearchResultsPage] Cleaning up parking_slots_updated listener');
+        socket.off('parking_slots_updated', handleSlotUpdate);
+      };
+    }
   }, [loadParkings, urlFilters]);
 
   function patchFilters(patch) {

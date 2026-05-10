@@ -7,11 +7,11 @@ import {
   validateBookingInput,
   formatValidationErrors
 } from '../utils/bookingValidation.js';
-import { clampAvailableSlots, increaseAvailableSlots } from './slot.service.js';
 import {
   calculateOccupiedSlots,
   buildOccupancyFilter
 } from './occupancy.service.js';
+import { getIO } from '../config/socket.js';
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'];
 const KOLKATA_OFFSET_MINUTES = 330;
@@ -68,19 +68,20 @@ export function computeBookingStatus(booking) {
  * Reconcile expired bookings for a parking listing.
  *
  * Finds all confirmed/pending bookings for the given parking whose time
- * window has fully passed, marks them completed, and restores their slot
- * counts to the parking's availableSlots field — all in a single atomic
- * operation.
+ * window has fully passed and marks them completed.
  *
- * This is called lazily on parking reads so availableSlots stays accurate
- * without a background job. It is idempotent: running it twice is safe.
+ * This is called lazily on parking reads for data hygiene.
+ * It is idempotent: running it twice is safe.
+ *
+ * Note: Availability is computed dynamically from live booking data,
+ * so no slot field mutation is needed. Marking bookings as completed
+ * automatically excludes them from occupancy calculations.
  *
  * @param {string|ObjectId} parkingId
  * @param {object} deps - injectable for testing
  */
 export async function reconcileExpiredBookings(parkingId, deps = {}) {
   const BookingModel = deps.BookingModel ?? Booking;
-  const ParkingModel = deps.ParkingModel ?? Parking;
 
   const { date: todayStr, time: currentTime } = getKolkataNowParts();
 
@@ -88,107 +89,50 @@ export async function reconcileExpiredBookings(parkingId, deps = {}) {
   // A booking is expired when:
   //   bookingDate < today  →  entirely in the past
   //   bookingDate === today AND endTime <= currentTime  →  ended today
-  const expiredBookings = await BookingModel.find({
-    parking: parkingId,
-    status: { $in: ACTIVE_BOOKING_STATUSES },
-    $or: [
-      { bookingDate: { $lt: todayStr } },
-      { bookingDate: todayStr, endTime: { $lte: currentTime } }
-    ]
-  }).lean();
+  const result = await BookingModel.updateMany(
+    {
+      parking: parkingId,
+      status: { $in: ACTIVE_BOOKING_STATUSES },
+      $or: [
+        { bookingDate: { $lt: todayStr } },
+        { bookingDate: todayStr, endTime: { $lte: currentTime } }
+      ]
+    },
+    { $set: { status: 'completed' } }
+  );
 
-  if (expiredBookings.length === 0) {
-    return 0; // nothing to do
+  const modifiedCount = result.modifiedCount ?? 0;
+  
+  // If bookings were auto-completed, emit socket event to update admin/owner dashboards
+  if (modifiedCount > 0) {
+    console.log(`[BookingService] Auto-completed ${modifiedCount} expired booking(s) for parking:`, parkingId);
+    
+    // Recalculate RESERVED SLOTS after auto-completion
+    const { calculateReservedSlots } = await import('./occupancy.service.js');
+    const { Parking } = await import('../models/parking.model.js');
+    const { getIO } = await import('../config/socket.js');
+    
+    const parking = await Parking.findById(parkingId).lean();
+    if (parking) {
+      const reservedSlots = await calculateReservedSlots(parkingId, { BookingModel });
+      
+      const io = getIO();
+      if (io) {
+        const eventData = {
+          parkingId: parkingId.toString(),
+          action: 'auto_completed',
+          totalSlots: parking.totalSlots,
+          reservedSlots,
+          occupiedSlots: reservedSlots,
+          availableSlots: Math.max(0, parking.totalSlots - reservedSlots)
+        };
+        console.log('[BookingService] Emitting parking_slots_updated event (auto-completion):', eventData);
+        io.emit('parking_slots_updated', eventData);
+      }
+    }
   }
 
-  const expiredIds = expiredBookings.map((b) => b._id);
-  const slotsToRestore = expiredBookings.reduce((sum, b) => sum + b.slotCount, 0);
-  const runInTransaction = deps.runInTransaction
-    ?? (deps.BookingModel || deps.ParkingModel ? (work) => work(null) : withTransaction);
-
-  await runInTransaction(async (session) => {
-    await BookingModel.updateMany(
-      { _id: { $in: expiredIds }, status: { $in: ACTIVE_BOOKING_STATUSES } },
-      { $set: { status: 'completed' } },
-      { session }
-    );
-    await increaseAvailableSlots(parkingId, slotsToRestore, { ParkingModel, session });
-  });
-
-  return expiredBookings.length;
-}
-
-/**
- * Compute the real-time available slot count for a parking by reading
- * the stored availableSlots field from the database.
- *
- * The stored availableSlots field is automatically maintained by the booking
- * system (decremented on booking creation, incremented on cancellation/completion).
- * This ensures accurate availability accounting for all active bookings.
- *
- * Used to enrich list responses (search, nearby) without complex aggregations.
- *
- * @param {string|ObjectId} parkingId
- * @param {number} totalSlots - Fallback if parking not found
- * @param {object} deps
- * @returns {Promise<number>}
- */
-export async function computeLiveAvailableSlots(parkingId, totalSlots, deps = {}) {
-  const ParkingModel = deps.ParkingModel ?? Parking;
-
-  const parking = await ParkingModel.findById(parkingId).select('availableSlots').lean();
-
-  return parking?.availableSlots ?? totalSlots;
-}
-
-/**
- * Compute live available slots for multiple parkings in a single aggregation.
- * Returns a Map of parkingId (string) → liveAvailableSlots (number).
- *
- * This calculates the ACTUAL available slots by subtracting ALL active bookings
- * (both ongoing and upcoming) from the total slots. This ensures the owner
- * dashboard shows accurate availability accounting for future reservations.
- *
- * @param {Array<{id: string, totalSlots: number}>} parkings
- * @param {object} deps
- * @returns {Promise<Map<string, number>>}
- */
-export async function computeLiveAvailableSlotsForMany(parkings, deps = {}) {
-  if (parkings.length === 0) return new Map();
-
-  const ParkingModel = deps.ParkingModel ?? Parking;
-
-  if (deps.ParkingModel && !deps.forceLiveSlots) {
-    return new Map();
-  }
-
-  if (typeof ParkingModel.find !== 'function') {
-    return new Map();
-  }
-
-  const parkingIds = parkings.map((p) => new mongoose.Types.ObjectId(p.id.toString()));
-
-  // Get the actual availableSlots from the database (which accounts for all active bookings)
-  const query = ParkingModel.find({ _id: { $in: parkingIds } });
-
-  if (typeof query.select !== 'function') {
-    return new Map();
-  }
-
-  const selectedQuery = query.select('_id availableSlots');
-
-  if (typeof selectedQuery.lean !== 'function') {
-    return new Map();
-  }
-
-  const parkingDocs = await selectedQuery.lean();
-
-  const result = new Map();
-  for (const doc of parkingDocs) {
-    result.set(doc._id.toString(), doc.availableSlots);
-  }
-
-  return result;
+  return modifiedCount;
 }
 
 export function serializeBooking(booking) {
@@ -335,6 +279,27 @@ export async function createConfirmedBooking(input, user, deps = {}) {
     );
 
     console.log('Booking Created');
+    
+    // Emit real-time event with RESERVED SLOTS (all confirmed bookings)
+    const io = getIO();
+    if (io) {
+      const { calculateReservedSlots } = await import('./occupancy.service.js');
+      const reservedSlots = await calculateReservedSlots(parking._id, { BookingModel });
+      const eventData = {
+        parkingId: parking._id.toString(),
+        action: 'created',
+        bookingId: booking._id.toString(),
+        totalSlots: parking.totalSlots,
+        reservedSlots,
+        occupiedSlots: reservedSlots,  // For UI consistency
+        availableSlots: Math.max(0, parking.totalSlots - reservedSlots)
+      };
+      console.log('[BookingService] Emitting parking_slots_updated event:', eventData);
+      io.emit('parking_slots_updated', eventData);
+    } else {
+      console.warn('[BookingService] Socket.IO not available, cannot emit parking_slots_updated event');
+    }
+    
     return serializeBooking(booking);
   });
 }
@@ -402,15 +367,106 @@ export async function cancelBooking(id, user, deps = {}) {
       throw createHttpError(409, 'Bookings cannot be cancelled after the start time.');
     }
 
+    // Get parking and user details for notifications
+    const parking = await ParkingModel.findById(booking.parking).populate('owner', 'name email _id').session(session);
+    if (!parking) {
+      throw createHttpError(404, 'Parking not found');
+    }
+
+    const UserModel = deps.UserModel ?? (await import('../models/user.model.js')).User;
+    const bookingUser = await UserModel.findById(booking.user).select('name email _id').session(session);
+
     if (booking.status !== 'cancelled') {
       booking.status = 'cancelled';
       booking.bookingStatus = 'cancelled';
       booking.cancelledBy = user.role === 'admin' ? 'admin' : 'user';
       await booking.save({ session });
-      await clampAvailableSlots(booking.parking, { ParkingModel, session });
+      // Note: Availability is computed dynamically from live booking data.
+      // Cancelled bookings are automatically excluded from occupancy calculations.
     }
 
     console.log('Booking Cancelled');
+    
+    // Recalculate RESERVED SLOTS after cancellation to emit accurate counts
+    if (parking) {
+      const { calculateReservedSlots } = await import('./occupancy.service.js');
+      const reservedSlots = await calculateReservedSlots(parking._id, { BookingModel });
+      
+      // Emit real-time event to notify parking owner and admins about slot update
+      const io = getIO();
+      if (io) {
+        const eventData = {
+          parkingId: parking._id.toString(),
+          action: 'cancelled',
+          bookingId: booking._id.toString(),
+          totalSlots: parking.totalSlots,
+          reservedSlots,
+          occupiedSlots: reservedSlots,  // For UI consistency
+          availableSlots: Math.max(0, parking.totalSlots - reservedSlots)
+        };
+        console.log('[BookingService] Emitting parking_slots_updated event (cancellation):', eventData);
+        io.emit('parking_slots_updated', eventData);
+      } else {
+        console.warn('[BookingService] Socket.IO not available, cannot emit parking_slots_updated event');
+      }
+    }
+
+    // Send cancellation notifications (fire-and-forget, don't block transaction)
+    Promise.resolve().then(async () => {
+      try {
+        const { createNotification } = await import('./notification.service.js');
+        const { formatBookingCancelledNotification } = await import('../utils/notificationFormatter.js');
+        const cancelledBy = booking.cancelledBy === 'admin' ? 'Admin' : 'User';
+        
+        // Format notification message with improved UX
+        const notificationMessage = formatBookingCancelledNotification(
+          booking,
+          parking,
+          cancelledBy
+        );
+
+        // Notify user (driver)
+        if (bookingUser) {
+          await createNotification(
+            bookingUser._id,
+            'driver',
+            'booking_cancelled',
+            notificationMessage,
+            deps
+          );
+          console.log('[BookingService] Cancellation notification sent to user:', bookingUser._id);
+        }
+
+        // Notify parking owner
+        if (parking.owner) {
+          await createNotification(
+            parking.owner._id,
+            'owner',
+            'booking_cancelled',
+            notificationMessage,
+            deps
+          );
+          console.log('[BookingService] Cancellation notification sent to owner:', parking.owner._id);
+        }
+
+        // Notify all admins
+        const admins = await UserModel.find({ role: 'admin' }).select('_id').lean();
+        for (const admin of admins) {
+          await createNotification(
+            admin._id,
+            'admin',
+            'booking_cancelled',
+            notificationMessage,
+            deps
+          );
+        }
+        console.log('[BookingService] Cancellation notifications sent to', admins.length, 'admins');
+      } catch (notificationError) {
+        console.error('[BookingService] Failed to send cancellation notifications:', notificationError);
+        // Don't throw - notifications are non-critical
+      }
+    });
+    
     return serializeBooking(booking);
   });
 }
